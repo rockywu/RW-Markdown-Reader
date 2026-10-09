@@ -90,7 +90,7 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const locale: Locale = env?.locale === "zh" ? "zh" : "en";
   const language = token.info.trim().split(/\s+/)[0].toLowerCase();
   if (language === "mermaid") {
-    return `<figure class="diagram"><div class="diagram-caption"><span>MERMAID</span><button type="button" class="diagram-expand" aria-label="${translate(locale, "largerDiagram")}">${translate(locale, "expand")} ↗</button></div><div class="mermaid-source">${escape(token.content)}</div></figure>`;
+    return `<figure class="diagram"><div class="diagram-caption"><span>Mermaid</span><button type="button" class="diagram-expand" aria-label="${translate(locale, "largerDiagram")}">${translate(locale, "expand")}</button></div><div class="mermaid-source">${escape(token.content)}</div></figure>`;
   }
   if (language === "math" || language === "latex")
     return mathMarkup(token.content, true);

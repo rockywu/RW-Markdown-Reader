@@ -13,6 +13,7 @@ import {
   type MessageParams,
 } from "../electron/i18n";
 import appIcon from "../build/icon.svg";
+import Icon from "./Icon.vue";
 
 const props = defineProps<{ initialLocale: Locale }>();
 const locale = ref(props.initialLocale);
@@ -39,20 +40,39 @@ const resizing = ref(false);
 const dirty = computed(() => !!doc.value && draft.value !== doc.value.content);
 const lines = computed(() => draft.value.split("\n").length);
 const platform = window.reader.platform;
-const outline = ref(true);
+const outline = ref(localStorage.getItem("markview-outline") !== "hidden");
+// Editing hides the outline by default without forgetting the reading preference.
+const editOutline = ref(false);
+const outlineVisible = computed(() =>
+  editing.value ? editOutline.value : outline.value,
+);
 const theme = ref(localStorage.getItem("markview-theme") || "light");
-const fontSize = ref(16);
+const storedFontSize = Number(localStorage.getItem("markview-font-size") ?? 16);
+const fontSize = ref(
+  Number.isFinite(storedFontSize)
+    ? Math.max(12, Math.min(24, Math.round(storedFontSize)))
+    : 16,
+);
 const error = ref("");
 const busy = ref(false);
 const dragging = ref(false);
+let dragDepth = 0;
 const article = ref<HTMLElement>();
 const scroller = ref<HTMLElement>();
 const searchInput = ref<HTMLInputElement>();
 const searchOpen = ref(false);
 const query = ref("");
 const matches = ref({ matches: 0, activeMatchOrdinal: 0 });
+const searched = ref(false);
 const zoomDialog = ref<HTMLDialogElement>();
+const diagramViewport = ref<HTMLElement>();
 const diagramZoom = ref(1);
+const panning = ref(false);
+let panStart = { x: 0, y: 0, left: 0, top: 0 };
+const progress = ref(0);
+const activeHeading = ref("");
+const outlineNav = ref<HTMLElement>();
+const modifierKey = platform === "darwin" ? "⌘" : "Ctrl";
 const enlargedDiagram = ref("");
 const rendered = computed(() =>
   renderMarkdown(previewSource.value, locale.value),
@@ -67,15 +87,32 @@ const title = computed(() =>
 const isDark = computed(() => theme.value === "dark");
 const modified = computed(() =>
   doc.value
-    ? new Date(doc.value.modifiedAt).toLocaleTimeString(
+    ? new Date(doc.value.modifiedAt).toLocaleString(
         locale.value === "zh" ? "zh-CN" : "en-US",
         {
+          month: "short",
+          day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
-          second: "2-digit",
         },
       )
     : t("offline"),
+);
+// Roughly 400 CJK characters or 220 words per minute.
+const readingMinutes = computed(() => {
+  const text = previewSource.value;
+  const cjk = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g)?.length ?? 0;
+  const words =
+    text.replace(/[\u3400-\u9fff\uf900-\ufaff]/g, " ").match(/[\p{L}\p{N}]+/gu)
+      ?.length ?? 0;
+  return Math.max(1, Math.round(cjk / 400 + words / 220));
+});
+const matchLabel = computed(() =>
+  !query.value
+    ? ""
+    : searched.value && !matches.value.matches
+      ? t("noMatches")
+      : `${matches.value.activeMatchOrdinal} / ${matches.value.matches}`,
 );
 let revision = 0;
 let pendingAnchor: string | null = null;
@@ -222,7 +259,6 @@ async function newFile(initial = "") {
     draft.value = initial;
     previewSource.value = initial;
     editing.value = true;
-    outline.value = false;
     syncDraft();
     await nextTick();
     sourceEditor.value?.focus();
@@ -237,7 +273,6 @@ async function toggleEditor() {
     return;
   }
   editing.value = !editing.value;
-  if (editing.value) outline.value = false;
   syncDraft();
   if (editing.value) {
     await nextTick();
@@ -284,8 +319,10 @@ async function draw() {
         pendingAnchor = null;
         jump(id);
       } else scroller.value?.scrollTo(0, position);
-      if (searchOpen.value && query.value)
+      // Restarting a find session while typing would steal the editor selection.
+      if (searchOpen.value && query.value && !editing.value)
         await window.reader.find(query.value);
+      trackScroll();
     }
   } catch (value) {
     showError(value);
@@ -301,17 +338,60 @@ watch(theme, (value) => {
 watch(query, () => {
   clearTimeout(searchTimer);
   matches.value = { matches: 0, activeMatchOrdinal: 0 };
+  searched.value = false;
   searchTimer = setTimeout(() => {
     void window.reader.find(query.value).catch(showError);
   }, 150);
 });
+watch(outline, (visible) => {
+  localStorage.setItem("markview-outline", visible ? "visible" : "hidden");
+});
+watch(fontSize, (size) => {
+  localStorage.setItem("markview-font-size", String(size));
+});
+watch(activeHeading, async (id) => {
+  await nextTick();
+  outlineNav.value
+    ?.querySelector<HTMLElement>(`[data-heading="${CSS.escape(id)}"]`)
+    ?.scrollIntoView({ block: "nearest" });
+});
+function toggleOutline() {
+  if (editing.value) editOutline.value = !editOutline.value;
+  else outline.value = !outline.value;
+}
+function changeFontSize(step: number) {
+  fontSize.value = Math.max(12, Math.min(24, fontSize.value + step));
+}
+let scrollFrame = 0;
+function trackScroll() {
+  cancelAnimationFrame(scrollFrame);
+  scrollFrame = requestAnimationFrame(() => {
+    const element = scroller.value;
+    if (!element) return;
+    const range = element.scrollHeight - element.clientHeight;
+    progress.value = range > 0 ? Math.min(1, element.scrollTop / range) : 0;
+    const top = element.getBoundingClientRect().top + 96;
+    let current = rendered.value.headings[0]?.id ?? "";
+    for (const heading of rendered.value.headings) {
+      const target = document.getElementById(heading.id);
+      if (!target || !article.value?.contains(target)) continue;
+      if (target.getBoundingClientRect().top > top) break;
+      current = heading.id;
+    }
+    activeHeading.value = current;
+  });
+}
 async function jump(id: string) {
   if (editing.value) previewVisible.value = true;
   await nextTick();
   const element = Array.from(
     article.value?.querySelectorAll("[id]") ?? [],
   ).find((item) => item.id === id);
-  element?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  element?.scrollIntoView({
+    behavior: reduce ? "auto" : "smooth",
+    block: "start",
+  });
 }
 async function openSearch() {
   if (editing.value) previewVisible.value = true;
@@ -328,10 +408,30 @@ function closeSearch() {
 function nextMatch(forward = true) {
   void window.reader.find(query.value, forward).catch(showError);
 }
+// Only file drags show the overlay; text dragged inside the editor keeps its native behavior.
+const carriesFiles = (event: DragEvent) =>
+  !!event.dataTransfer?.types.includes("Files");
+function dragEnter(event: DragEvent) {
+  if (!carriesFiles(event)) return;
+  dragDepth++;
+  dragging.value = true;
+}
+function dragOver(event: DragEvent) {
+  if (!carriesFiles(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+}
+function dragLeave(event: DragEvent) {
+  if (!carriesFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) dragging.value = false;
+}
 async function onDrop(event: DragEvent) {
+  dragDepth = 0;
   dragging.value = false;
   const file = event.dataTransfer?.files[0];
   if (!file) return;
+  event.preventDefault();
   try {
     const next = await window.reader.openDropped(file);
     if (next) receive(next);
@@ -349,6 +449,7 @@ async function articleClick(event: MouseEvent) {
       diagramZoom.value = 1;
       await nextTick();
       zoomDialog.value?.showModal();
+      diagramViewport.value?.scrollTo(0, 0);
     }
     return;
   }
@@ -369,7 +470,77 @@ async function articleClick(event: MouseEvent) {
     showError(value);
   }
 }
+function zoomDiagram(factor: number) {
+  diagramZoom.value = Math.max(0.5, Math.min(4, diagramZoom.value * factor));
+}
+function fitDiagram() {
+  diagramZoom.value = 1;
+  diagramViewport.value?.scrollTo(0, 0);
+}
+function wheelDiagram(event: WheelEvent) {
+  // Trackpad pinch arrives as a wheel event with ctrlKey set.
+  if (!event.ctrlKey && !event.metaKey) return;
+  event.preventDefault();
+  zoomDiagram(Math.exp(-event.deltaY * 0.01));
+}
+function startPan(event: PointerEvent) {
+  const viewport = diagramViewport.value;
+  if (event.button !== 0 || !viewport) return;
+  viewport.setPointerCapture(event.pointerId);
+  panning.value = true;
+  panStart = {
+    x: event.clientX,
+    y: event.clientY,
+    left: viewport.scrollLeft,
+    top: viewport.scrollTop,
+  };
+}
+function pan(event: PointerEvent) {
+  const viewport = diagramViewport.value;
+  if (!panning.value || !viewport) return;
+  viewport.scrollLeft = panStart.left - (event.clientX - panStart.x);
+  viewport.scrollTop = panStart.top - (event.clientY - panStart.y);
+}
+let releaseTab = false;
+function editorKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    // Escape hands Tab back to focus navigation for keyboard users.
+    releaseTab = true;
+    return;
+  }
+  if (event.key !== "Tab" || releaseTab || event.altKey || event.ctrlKey || event.metaKey) {
+    releaseTab = false;
+    return;
+  }
+  const editor = event.target as HTMLTextAreaElement;
+  if (editor.readOnly) return;
+  event.preventDefault();
+  const { selectionStart: start, selectionEnd: end, value } = editor;
+  const indent = "  ";
+  if (!event.shiftKey && !value.slice(start, end).includes("\n")) {
+    // execCommand keeps the edit on the native undo stack and fires input.
+    document.execCommand("insertText", false, indent);
+    return;
+  }
+  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+  const block = value.slice(lineStart, end);
+  const lines = block.split("\n");
+  const changed = lines.map((line) =>
+    event.shiftKey ? line.replace(/^( {1,2}|\t)/, "") : indent + line,
+  );
+  const firstDelta = changed[0].length - lines[0].length;
+  const replacement = changed.join("\n");
+  if (replacement === block) return;
+  editor.setSelectionRange(lineStart, end);
+  document.execCommand("insertText", false, replacement);
+  editor.setSelectionRange(
+    Math.max(lineStart, start + firstDelta),
+    lineStart + replacement.length,
+  );
+}
 function keyboard(event: KeyboardEvent) {
+  // The diagram dialog handles its own Escape; keep search and errors as they are.
+  if (zoomDialog.value?.open) return;
   if (event.key === "Escape") {
     if (searchOpen.value) closeSearch();
     error.value = "";
@@ -390,14 +561,17 @@ onMounted(async () => {
     }),
     window.reader.onFind((value) => {
       matches.value = value;
+      searched.value = true;
     }),
     window.reader.onMenu((action) => {
       if (action === "find") void openSearch();
-      else if (action === "outline") outline.value = !outline.value;
+      else if (action === "outline") toggleOutline();
+      else if (action === "text-larger") changeFontSize(1);
+      else if (action === "text-smaller") changeFontSize(-1);
+      else if (action === "text-reset") fontSize.value = 16;
       else if (action === "toggle-edit") void toggleEditor();
       else if (action === "edit") {
         editing.value = true;
-        outline.value = false;
         syncDraft();
       } else if (action === "external-change") externalChange.value = true;
     }),
@@ -412,6 +586,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   revision++;
+  cancelAnimationFrame(scrollFrame);
   unsubscribers.forEach((stop) => stop());
   clearTimeout(searchTimer);
   clearTimeout(previewTimer);
@@ -423,22 +598,21 @@ onUnmounted(() => {
   <div
     class="app-shell"
     :class="{ 'is-editing': editing }"
-    @dragover.prevent="dragging = true"
-    @dragleave.self="dragging = false"
-    @drop.prevent="onDrop"
+    @dragenter="dragEnter"
+    @dragover="dragOver"
+    @dragleave="dragLeave"
+    @drop="onDrop"
   >
     <header class="toolbar">
       <div class="brand">
         <img class="brand-logo" :src="appIcon" :alt="t('appIcon')" />
-        <div>
-          <strong>{{ t("brand") }}</strong
-          ><small>MARKVIEW</small>
-        </div>
+        <strong>{{ t("brand") }}</strong>
       </div>
       <div class="toolbar-divider"></div>
       <button class="open-button" :disabled="saving" @click="opening">
-        <span aria-hidden="true">＋</span> {{ t("open") }}
-        <kbd>{{ platform === "darwin" ? "⌘ O" : "Ctrl O" }}</kbd>
+        <Icon name="open" />
+        <span>{{ t("open") }}</span>
+        <kbd>{{ modifierKey }} O</kbd>
       </button>
       <button
         class="text-button new-button"
@@ -448,7 +622,7 @@ onUnmounted(() => {
         {{ t("new") }}
       </button>
       <span class="toolbar-spacer"></span>
-      <div class="mode-switch" :aria-label="t('mode')">
+      <div class="mode-switch" role="group" :aria-label="t('mode')">
         <button
           :aria-pressed="!editing"
           :disabled="saving"
@@ -466,6 +640,7 @@ onUnmounted(() => {
       </div>
       <button
         class="save-button"
+        :class="{ 'is-dirty': dirty }"
         :disabled="saving || !doc"
         @click="saveFile()"
       >
@@ -478,46 +653,59 @@ onUnmounted(() => {
       >
         {{ t("saveAs") }}
       </button>
-      <button
-        class="icon-button"
-        :aria-pressed="outline"
-        :aria-label="t('toggleOutline')"
-        :title="t('outline')"
-        @click="outline = !outline"
-      >
-        ☷
-      </button>
-      <button
-        class="icon-button"
-        :aria-label="t('findDocument')"
-        :title="t('find')"
-        @click="openSearch"
-      >
-        ⌕
-      </button>
-      <div class="font-control">
+      <div class="toolbar-divider"></div>
+      <div class="tool-cluster">
         <button
-          :aria-label="t('smallerText')"
-          :disabled="fontSize <= 12"
-          @click="fontSize--"
+          class="icon-button"
+          :aria-pressed="outlineVisible"
+          :aria-label="t('toggleOutline')"
+          :title="t('toggleOutline')"
+          @click="toggleOutline"
         >
-          A−</button
-        ><span>{{ fontSize }}</span
-        ><button
-          :aria-label="t('largerText')"
-          :disabled="fontSize >= 24"
-          @click="fontSize++"
+          <Icon name="outline" />
+        </button>
+        <button
+          class="icon-button"
+          :aria-label="t('findDocument')"
+          :title="`${t('find')} (${modifierKey} F)`"
+          @click="openSearch"
         >
-          A＋
+          <Icon name="search" />
+        </button>
+        <div
+          class="font-control"
+          role="group"
+          :aria-label="t('textSize', { size: fontSize })"
+        >
+          <button
+            class="font-smaller"
+            :aria-label="t('smallerText')"
+            :title="`${t('smallerText')} (${modifierKey} −)`"
+            :disabled="fontSize <= 12"
+            @click="changeFontSize(-1)"
+          >
+            A
+          </button>
+          <span aria-hidden="true">{{ fontSize }}</span>
+          <button
+            class="font-larger"
+            :aria-label="t('largerText')"
+            :title="`${t('largerText')} (${modifierKey} +)`"
+            :disabled="fontSize >= 24"
+            @click="changeFontSize(1)"
+          >
+            A
+          </button>
+        </div>
+        <button
+          class="icon-button theme-toggle"
+          :aria-label="t(isDark ? 'lightTheme' : 'darkTheme')"
+          :title="t(isDark ? 'lightTheme' : 'darkTheme')"
+          @click="theme = isDark ? 'light' : 'dark'"
+        >
+          <Icon :name="isDark ? 'sun' : 'moon'" />
         </button>
       </div>
-      <button
-        class="icon-button theme-toggle"
-        :aria-label="t(isDark ? 'lightTheme' : 'darkTheme')"
-        @click="theme = isDark ? 'light' : 'dark'"
-      >
-        {{ isDark ? "☀" : "☾" }}
-      </button>
       <select
         class="language-select"
         aria-label="界面语言 / Interface language"
@@ -529,10 +717,19 @@ onUnmounted(() => {
         <option value="en">English</option>
       </select>
     </header>
+    <div
+      class="signal-rail"
+      :class="{ 'is-busy': busy || saving }"
+      aria-hidden="true"
+    >
+      <span :style="{ transform: `scaleX(${progress})` }"></span>
+    </div>
 
     <div v-if="error" class="error-banner" role="alert">
       <span>{{ error }}</span
-      ><button :aria-label="t('closeError')" @click="error = ''">×</button>
+      ><button :aria-label="t('closeError')" :title="t('closeError')" @click="error = ''">
+        <Icon name="close" />
+      </button>
     </div>
     <div v-if="externalChange" class="conflict-banner" role="status">
       <span>{{ t("externalChange") }}</span
@@ -543,10 +740,9 @@ onUnmounted(() => {
       </button>
     </div>
     <div class="workspace">
-      <aside v-if="outline" class="sidebar">
-        <div class="sidebar-label">{{ t("reading") }}</div>
+      <aside v-if="outlineVisible" class="sidebar">
         <div class="document-card">
-          <span class="file-symbol">M↓</span>
+          <span class="file-symbol"><Icon name="file" /></span>
           <div>
             <strong :title="title">{{ title }}</strong
             ><small>{{ t(doc ? "localDocument" : "startReading") }}</small>
@@ -556,14 +752,20 @@ onUnmounted(() => {
           <span>{{ t("outline") }}</span
           ><small>{{ rendered.headings.length }}</small>
         </div>
-        <nav :aria-label="t('outline')">
+        <nav ref="outlineNav" :aria-label="t('outline')">
           <button
             v-for="heading in rendered.headings"
             :key="heading.id"
+            :data-heading="heading.id"
+            :title="heading.text"
             :style="{
-              paddingLeft: `${14 + Math.min(heading.level - 1, 3) * 12}px`,
+              paddingLeft: `${12 + Math.min(heading.level - 1, 3) * 12}px`,
             }"
-            :class="{ 'top-heading': heading.level === 1 }"
+            :class="{
+              'top-heading': heading.level === 1,
+              active: heading.id === activeHeading,
+            }"
+            :aria-current="heading.id === activeHeading ? 'location' : undefined"
             @click="jump(heading.id)"
           >
             {{ heading.text }}
@@ -584,23 +786,47 @@ onUnmounted(() => {
             ><span class="slash">/</span><strong>{{ title }}</strong
             ><span v-if="dirty" class="unsaved-label">{{ t("unsaved") }}</span>
           </div>
-          <span class="format-badge">MARKDOWN</span>
+          <span class="reading-time">{{
+            t("readingTime", { count: readingMinutes })
+          }}</span>
         </div>
         <div v-if="searchOpen" class="search-bar">
-          <input
-            ref="searchInput"
-            v-model="query"
-            :aria-label="t('searchContent')"
-            :placeholder="t('searchPlaceholder')"
-            maxlength="500"
-            @keydown.enter="nextMatch(!$event.shiftKey)"
-          /><span>{{ matches.activeMatchOrdinal }} / {{ matches.matches }}</span
-          ><button :aria-label="t('previousMatch')" @click="nextMatch(false)">
-            ↑</button
-          ><button :aria-label="t('nextMatch')" @click="nextMatch(true)">
-            ↓</button
-          ><button :aria-label="t('closeSearch')" @click="closeSearch">
-            ×
+          <div class="search-field">
+            <Icon name="search" />
+            <input
+              ref="searchInput"
+              v-model="query"
+              :aria-label="t('searchContent')"
+              :placeholder="t('searchPlaceholder')"
+              maxlength="500"
+              @keydown.enter="nextMatch(!$event.shiftKey)"
+            /><span
+              class="match-count"
+              :class="{ 'is-empty': matchLabel === t('noMatches') }"
+              aria-live="polite"
+              >{{ matchLabel }}</span
+            >
+          </div>
+          <button
+            :aria-label="t('previousMatch')"
+            :title="t('previousMatch')"
+            :disabled="!matches.matches"
+            @click="nextMatch(false)"
+          >
+            <Icon name="up" /></button
+          ><button
+            :aria-label="t('nextMatch')"
+            :title="t('nextMatch')"
+            :disabled="!matches.matches"
+            @click="nextMatch(true)"
+          >
+            <Icon name="down" /></button
+          ><button
+            :aria-label="t('closeSearch')"
+            :title="t('closeSearch')"
+            @click="closeSearch"
+          >
+            <Icon name="close" />
           </button>
         </div>
         <div ref="contentPanes" class="content-panes" :class="{ resizing }">
@@ -642,6 +868,7 @@ onUnmounted(() => {
               autocapitalize="off"
               autocomplete="off"
               @input="inputDraft"
+              @keydown="editorKeydown"
             ></textarea>
           </section>
           <div
@@ -674,11 +901,8 @@ onUnmounted(() => {
               <span>{{ t("livePreview") }}</span
               ><small>{{ t(busy ? "rendering" : "updatesAsYouType") }}</small>
             </div>
-            <div ref="scroller" class="reading-scroll">
+            <div ref="scroller" class="reading-scroll" @scroll.passive="trackScroll">
               <div class="reading-page">
-                <div class="reading-eyebrow">
-                  {{ t(doc ? "documentCaption" : "welcomeCaption") }}
-                </div>
                 <details
                   v-if="Object.keys(rendered.metadata).length"
                   class="metadata"
@@ -725,7 +949,7 @@ onUnmounted(() => {
           <span :title="doc?.path">{{
             doc?.path || (doc ? t("untitledHint") : t("supportedContent"))
           }}</span
-          ><span>{{
+          ><span :class="{ 'is-attention': dirty }">{{
             saving
               ? t("processingFile")
               : dirty
@@ -733,7 +957,7 @@ onUnmounted(() => {
                 : busy
                   ? t("rendering")
                   : doc?.path
-                    ? t("savedAt", { time: modified })
+                    ? t("modifiedAt", { time: modified })
                     : doc
                       ? t("newUnsaved")
                       : modified
@@ -741,13 +965,10 @@ onUnmounted(() => {
         </footer>
       </main>
     </div>
-    <div
-      v-if="dragging"
-      class="drop-overlay"
-      @dragleave.prevent="dragging = false"
-    >
+    <div v-if="dragging" class="drop-overlay">
       <div>
-        <span>↓</span><strong>{{ t("dropDocument") }}</strong>
+        <Icon name="drop" />
+        <strong>{{ t("dropDocument") }}</strong>
         <p>{{ t("dropFormats") }}</p>
       </div>
     </div>
@@ -757,25 +978,52 @@ onUnmounted(() => {
       @click="$event.target === zoomDialog && zoomDialog?.close()"
     >
       <div class="dialog-toolbar">
-        <strong>{{ t("diagramPreview") }}</strong>
-        <div>
+        <div class="dialog-title">
+          <strong>{{ t("diagramPreview") }}</strong>
+          <small>{{ t("diagramHint", { key: modifierKey }) }}</small>
+        </div>
+        <div class="dialog-actions">
           <button
             :aria-label="t('smallerDiagram')"
-            @click="diagramZoom = Math.max(0.5, diagramZoom - 0.25)"
+            :title="t('smallerDiagram')"
+            :disabled="diagramZoom <= 0.5"
+            @click="zoomDiagram(1 / 1.25)"
           >
-            −</button
+            <Icon name="minus" /></button
           ><span>{{ Math.round(diagramZoom * 100) }}%</span
           ><button
             :aria-label="t('largerDiagram')"
-            @click="diagramZoom = Math.min(4, diagramZoom + 0.25)"
+            :title="t('largerDiagram')"
+            :disabled="diagramZoom >= 4"
+            @click="zoomDiagram(1.25)"
           >
-            ＋</button
-          ><button :aria-label="t('closeDiagram')" @click="zoomDialog?.close()">
-            ×
+            <Icon name="plus" /></button
+          ><button
+            :aria-label="t('fitDiagram')"
+            :title="t('fitDiagram')"
+            @click="fitDiagram"
+          >
+            <Icon name="fit" /></button
+          ><span class="dialog-divider"></span
+          ><button
+            :aria-label="t('closeDiagram')"
+            :title="t('closeDiagram')"
+            @click="zoomDialog?.close()"
+          >
+            <Icon name="close" />
           </button>
         </div>
       </div>
-      <div class="diagram-viewport">
+      <div
+        ref="diagramViewport"
+        class="diagram-viewport"
+        :class="{ panning }"
+        @wheel="wheelDiagram"
+        @pointerdown="startPan"
+        @pointermove="pan"
+        @pointerup="panning = false"
+        @pointercancel="panning = false"
+      >
         <div
           class="enlarged-diagram"
           :style="{ width: `${diagramZoom * 100}%` }"
@@ -785,3 +1033,4 @@ onUnmounted(() => {
     </dialog>
   </div>
 </template>
+

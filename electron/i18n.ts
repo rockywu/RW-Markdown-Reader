@@ -6,14 +6,6 @@ export function systemLocale(language: string): Locale {
 
 const messages = {
   brand: { zh: "墨阅", en: "Markview" },
-  documentCaption: {
-    zh: "让文档清晰呈现。",
-    en: "YOUR DOCUMENT, BEAUTIFULLY READ.",
-  },
-  welcomeCaption: {
-    zh: "安静记录你的每个想法。",
-    en: "A QUIET SPACE FOR YOUR IDEAS.",
-  },
   appTitle: { zh: "墨阅 · Markview", en: "Markview" },
   appIcon: { zh: "墨阅图标", en: "Markview icon" },
   welcome: { zh: "欢迎使用墨阅", en: "Welcome to Markview" },
@@ -36,6 +28,8 @@ const messages = {
   find: { zh: "查找", en: "Find" },
   smallerText: { zh: "缩小文字", en: "Decrease text size" },
   largerText: { zh: "放大文字", en: "Increase text size" },
+  resetText: { zh: "默认文字大小", en: "Default text size" },
+  textSize: { zh: "文字大小 {size}", en: "Text size {size}" },
   lightTheme: { zh: "切换浅色主题", en: "Switch to light theme" },
   darkTheme: { zh: "切换深色主题", en: "Switch to dark theme" },
   closeError: { zh: "关闭错误提示", en: "Dismiss error" },
@@ -45,7 +39,6 @@ const messages = {
   },
   saveCopy: { zh: "另存为副本", en: "Save a copy" },
   reloadDisk: { zh: "重新加载磁盘版本", en: "Reload from disk" },
-  reading: { zh: "正在阅读", en: "NOW READING" },
   localDocument: { zh: "本地 Markdown 文档", en: "Local Markdown document" },
   startReading: { zh: "开始你的阅读", en: "Start reading" },
   noHeadings: { zh: "这篇文档没有标题", en: "This document has no headings" },
@@ -61,6 +54,7 @@ const messages = {
   previousMatch: { zh: "上一个匹配", en: "Previous match" },
   nextMatch: { zh: "下一个匹配", en: "Next match" },
   closeSearch: { zh: "关闭查找", en: "Close search" },
+  noMatches: { zh: "无匹配", en: "No matches" },
   editorRegion: { zh: "Markdown 编辑区", en: "Markdown editor" },
   source: { zh: "Markdown 源码", en: "Markdown source" },
   lineCount: { zh: "{count} 行", en: "{count} lines" },
@@ -95,7 +89,8 @@ const messages = {
   },
   processingFile: { zh: "正在处理文件…", en: "Processing file…" },
   unsavedChanges: { zh: "有未保存的修改", en: "Unsaved changes" },
-  savedAt: { zh: "已保存 {time}", en: "Saved at {time}" },
+  modifiedAt: { zh: "修改于 {time}", en: "Modified {time}" },
+  readingTime: { zh: "约 {count} 分钟读完", en: "{count} min read" },
   newUnsaved: { zh: "新文档尚未保存", en: "New document has not been saved" },
   dropDocument: {
     zh: "放下你的 Markdown 文档",
@@ -109,6 +104,11 @@ const messages = {
   smallerDiagram: { zh: "缩小图表", en: "Zoom out diagram" },
   largerDiagram: { zh: "放大图表", en: "Zoom in diagram" },
   closeDiagram: { zh: "关闭图表", en: "Close diagram" },
+  fitDiagram: { zh: "适应窗口", en: "Fit to window" },
+  diagramHint: {
+    zh: "按住 {key} 滚动缩放，拖动平移",
+    en: "Hold {key} and scroll to zoom, drag to pan",
+  },
   expand: { zh: "放大", en: "Expand" },
   mathError: {
     zh: "公式解析失败，已保留源码",

@@ -324,6 +324,23 @@ function createMenu() {
           accelerator: "CmdOrCtrl+Shift+L",
           click: () => window?.webContents.send("reader:menu", "outline"),
         },
+        { type: "separator" },
+        {
+          label: t("largerText"),
+          accelerator: "CmdOrCtrl+=",
+          click: () => window?.webContents.send("reader:menu", "text-larger"),
+        },
+        {
+          label: t("smallerText"),
+          accelerator: "CmdOrCtrl+-",
+          click: () => window?.webContents.send("reader:menu", "text-smaller"),
+        },
+        {
+          label: t("resetText"),
+          accelerator: "CmdOrCtrl+0",
+          click: () => window?.webContents.send("reader:menu", "text-reset"),
+        },
+        { type: "separator" },
         { role: "togglefullscreen", label: t("fullscreen") },
         ...(devURL
           ? [{ role: "toggleDevTools" as const, label: t("devTools") }]
@@ -341,7 +358,7 @@ function createWindow() {
     minWidth: 820,
     minHeight: 560,
     title: t("appTitle"),
-    backgroundColor: "#f4f3ef",
+    backgroundColor: "#eef2f7",
     icon,
     show: false,
     webPreferences: {
