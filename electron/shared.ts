@@ -32,4 +32,5 @@ export interface ReaderAPI {
   onFind: (
     callback: (result: { matches: number; activeMatchOrdinal: number }) => void,
   ) => () => void;
+  onSaved: (callback: (name: string) => void) => () => void;
 }

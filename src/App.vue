@@ -14,6 +14,7 @@ import {
 } from "../electron/i18n";
 import appIcon from "../build/icon.svg";
 import Icon from "./Icon.vue";
+import { icons, type IconName } from "./icons";
 
 const props = defineProps<{ initialLocale: Locale }>();
 const locale = ref(props.initialLocale);
@@ -70,6 +71,8 @@ const diagramZoom = ref(1);
 const panning = ref(false);
 let panStart = { x: 0, y: 0, left: 0, top: 0 };
 const progress = ref(0);
+const showTop = ref(false);
+const notice = ref("");
 const activeHeading = ref("");
 const outlineNav = ref<HTMLElement>();
 const modifierKey = platform === "darwin" ? "⌘" : "Ctrl";
@@ -107,6 +110,12 @@ const readingMinutes = computed(() => {
       ?.length ?? 0;
   return Math.max(1, Math.round(cjk / 400 + words / 220));
 });
+// The file name stays visible while a long folder path is truncated.
+const pathParts = computed(() => {
+  const path = doc.value?.path ?? "";
+  const split = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
+  return { folder: path.slice(0, split), name: path.slice(split) };
+});
 const matchLabel = computed(() =>
   !query.value
     ? ""
@@ -118,6 +127,8 @@ let revision = 0;
 let pendingAnchor: string | null = null;
 let searchTimer: ReturnType<typeof setTimeout>;
 let previewTimer: ReturnType<typeof setTimeout>;
+let noticeTimer: ReturnType<typeof setTimeout>;
+const copyTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
 const unsubscribers: (() => void)[] = [];
 
 async function changeLocale(event: Event) {
@@ -296,6 +307,59 @@ async function reloadFile() {
     showError(value);
   }
 }
+function notify(message: string) {
+  notice.value = message;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => {
+    notice.value = "";
+  }, 1800);
+}
+const iconMarkup = (name: IconName) =>
+  `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icons[name]}</svg>`;
+// Added after sanitizing: document HTML can never contribute its own buttons.
+function addCopyButtons(root: HTMLElement) {
+  for (const block of root.querySelectorAll(".code-block")) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "code-copy";
+    button.title = t("copyCode");
+    button.setAttribute("aria-label", t("copyCode"));
+    button.innerHTML = iconMarkup("copy");
+    block.append(button);
+  }
+}
+async function copyCode(button: HTMLElement) {
+  const code = button.closest(".code-block")?.querySelector("pre")?.textContent;
+  if (code === undefined || code === null) return;
+  const text = code.replace(/\n$/, "");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // The async clipboard requires a focused document; fall back to a selection copy.
+    const scratch = document.createElement("textarea");
+    scratch.value = text;
+    scratch.setAttribute("readonly", "");
+    scratch.style.cssText = "position:fixed;opacity:0";
+    document.body.append(scratch);
+    scratch.select();
+    const copied = document.execCommand("copy");
+    scratch.remove();
+    button.focus();
+    if (!copied) return;
+  }
+  button.classList.add("is-copied");
+  button.setAttribute("aria-label", t("copied"));
+  button.innerHTML = `${iconMarkup("check")}<span>${t("copied")}</span>`;
+  clearTimeout(copyTimers.get(button));
+  copyTimers.set(
+    button,
+    setTimeout(() => {
+      button.classList.remove("is-copied");
+      button.setAttribute("aria-label", t("copyCode"));
+      button.innerHTML = iconMarkup("copy");
+    }, 1600),
+  );
+}
 async function draw() {
   const currentRevision = ++revision;
   busy.value = true;
@@ -307,6 +371,7 @@ async function draw() {
       rendered.value.html,
       doc.value?.assetBase ?? "",
     );
+    addCopyButtons(article.value);
     await enhanceDocument(
       article.value,
       isDark.value,
@@ -370,6 +435,7 @@ function trackScroll() {
     if (!element) return;
     const range = element.scrollHeight - element.clientHeight;
     progress.value = range > 0 ? Math.min(1, element.scrollTop / range) : 0;
+    showTop.value = element.scrollTop > element.clientHeight;
     const top = element.getBoundingClientRect().top + 96;
     let current = rendered.value.headings[0]?.id ?? "";
     for (const heading of rendered.value.headings) {
@@ -381,17 +447,33 @@ function trackScroll() {
     activeHeading.value = current;
   });
 }
+const smoothScroll = (): ScrollBehavior =>
+  matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+function scrollToTop() {
+  scroller.value?.scrollTo({ top: 0, behavior: smoothScroll() });
+}
+// While editing, the preview follows the editor proportionally; the reverse stays free.
+let syncFrame = 0;
+function followEditor(event: Event) {
+  if (!previewVisible.value) return;
+  const editor = event.target as HTMLTextAreaElement;
+  cancelAnimationFrame(syncFrame);
+  syncFrame = requestAnimationFrame(() => {
+    const preview = scroller.value;
+    if (!preview) return;
+    const range = editor.scrollHeight - editor.clientHeight;
+    preview.scrollTop =
+      (range > 0 ? editor.scrollTop / range : 0) *
+      (preview.scrollHeight - preview.clientHeight);
+  });
+}
 async function jump(id: string) {
   if (editing.value) previewVisible.value = true;
   await nextTick();
   const element = Array.from(
     article.value?.querySelectorAll("[id]") ?? [],
   ).find((item) => item.id === id);
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  element?.scrollIntoView({
-    behavior: reduce ? "auto" : "smooth",
-    block: "start",
-  });
+  element?.scrollIntoView({ behavior: smoothScroll(), block: "start" });
 }
 async function openSearch() {
   if (editing.value) previewVisible.value = true;
@@ -441,6 +523,11 @@ async function onDrop(event: DragEvent) {
 }
 async function articleClick(event: MouseEvent) {
   const target = event.target as Element;
+  const copyButton = target.closest<HTMLElement>(".code-copy");
+  if (copyButton) {
+    await copyCode(copyButton);
+    return;
+  }
   const button = target.closest(".diagram-expand");
   if (button) {
     const svg = button.closest(".diagram")?.querySelector("svg");
@@ -579,6 +666,7 @@ onMounted(async () => {
       matches.value = value;
       searched.value = true;
     }),
+    window.reader.onSaved((name) => notify(t("savedTo", { name }))),
     window.reader.onMenu((action) => {
       if (action === "find") void openSearch();
       else if (action === "outline") toggleOutline();
@@ -603,9 +691,11 @@ onMounted(async () => {
 onUnmounted(() => {
   revision++;
   cancelAnimationFrame(scrollFrame);
+  cancelAnimationFrame(syncFrame);
   unsubscribers.forEach((stop) => stop());
   clearTimeout(searchTimer);
   clearTimeout(previewTimer);
+  clearTimeout(noticeTimer);
   document.removeEventListener("keydown", keyboard);
 });
 </script>
@@ -791,7 +881,12 @@ onUnmounted(() => {
           </p>
         </nav>
         <div class="sidebar-bottom">
-          <span class="status-dot"></span> {{ t("localRendering") }}
+          <span
+            class="progress-ring"
+            :style="{ '--progress': `${progress * 100}%` }"
+            aria-hidden="true"
+          ></span
+          >{{ t("readProgress", { percent: Math.round(progress * 100) }) }}
         </div>
       </aside>
 
@@ -885,6 +980,7 @@ onUnmounted(() => {
               autocomplete="off"
               @input="inputDraft"
               @keydown="editorKeydown"
+              @scroll.passive="followEditor"
             ></textarea>
           </section>
           <div
@@ -959,12 +1055,29 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+            <Transition name="float">
+              <button
+                v-if="showTop"
+                class="back-to-top"
+                :aria-label="t('backToTop')"
+                :title="t('backToTop')"
+                @click="scrollToTop"
+              >
+                <Icon name="top" />
+              </button>
+            </Transition>
           </section>
         </div>
         <footer class="statusbar">
-          <span :title="doc?.path">{{
-            doc?.path || (doc ? t("untitledHint") : t("supportedContent"))
-          }}</span
+          <span class="status-path" :title="doc?.path"
+            ><span class="path-folder">{{
+              doc?.path
+                ? pathParts.folder
+                : t(doc ? "untitledHint" : "supportedContent")
+            }}</span
+            ><span v-if="doc?.path" class="path-name">{{
+              pathParts.name
+            }}</span></span
           ><span :class="{ 'is-attention': dirty }">{{
             saving
               ? t("processingFile")
@@ -980,6 +1093,13 @@ onUnmounted(() => {
           }}</span>
         </footer>
       </main>
+    </div>
+    <div class="toast-region" role="status" aria-live="polite">
+      <Transition name="float">
+        <div v-if="notice" class="toast">
+          <Icon name="check" /><span>{{ notice }}</span>
+        </div>
+      </Transition>
     </div>
     <div v-if="dragging" class="drop-overlay">
       <div>

@@ -30,5 +30,6 @@ const api: ReaderAPI = {
   onMenu: (callback) => listen("reader:menu", callback),
   onBusy: (callback) => listen("reader:busy", callback),
   onFind: (callback) => listen("reader:find-result", callback),
+  onSaved: (callback) => listen("reader:saved", callback),
 };
 contextBridge.exposeInMainWorld("reader", api);

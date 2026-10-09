@@ -172,7 +172,9 @@ async function saveCurrent(saveAs = false): Promise<DocumentData | null> {
       : `markview-asset://${randomUUID()}/`,
   };
   beginWatching(doc.path);
-  return publish(doc);
+  const published = publish(doc);
+  window?.webContents.send("reader:saved", doc.name);
+  return published;
 }
 async function confirmTransition(): Promise<boolean> {
   if (!dirty() || !window) return true;

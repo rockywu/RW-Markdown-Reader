@@ -175,6 +175,31 @@ try {
     true,
   );
   assert.equal(await page.locator(".markdown-alert").count(), 2);
+  // Code blocks copy their source without the language label, then confirm.
+  const copyButton = page.getByRole("button", { name: "复制代码" }).first();
+  await copyButton.click();
+  await page.getByRole("button", { name: "已复制" }).waitFor();
+  assert.equal(
+    await app.evaluate(({ clipboard }) => clipboard.readText()),
+    "const greeting: string = '你好，Markdown';\nconsole.log(greeting);",
+  );
+  await page.getByRole("button", { name: "复制代码" }).first().waitFor();
+
+  // Back to top appears after scrolling past one screen.
+  const backToTop = page.getByRole("button", { name: "回到顶部" });
+  await page
+    .locator(".reading-scroll")
+    .evaluate((element) => element.scrollTo(0, 0));
+  await backToTop.waitFor({ state: "detached" });
+  await page
+    .locator(".reading-scroll")
+    .evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  await backToTop.click();
+  await page.waitForFunction(
+    () => document.querySelector(".reading-scroll").scrollTop === 0,
+  );
+  await backToTop.waitFor({ state: "detached" });
+
   await page.locator("article img").scrollIntoViewIfNeeded();
   await page.waitForFunction(() => {
     const img = document.querySelector("article img");
@@ -407,6 +432,10 @@ try {
   );
   await page.waitForFunction(() => !document.querySelector(".unsaved-label"));
   assert.equal(await readFile(unicode, "utf8"), edited);
+  await page
+    .getByRole("status")
+    .filter({ hasText: `已保存到 ${path.basename(unicode)}` })
+    .waitFor();
 
   // External changes never overwrite the draft or get silently overwritten on save.
   const localDraft = edited + "\n本地未保存的修改。\n";
