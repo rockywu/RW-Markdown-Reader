@@ -180,7 +180,10 @@ try {
   await copyButton.click();
   await page.getByRole("button", { name: "已复制" }).waitFor();
   assert.equal(
-    await app.evaluate(({ clipboard }) => clipboard.readText()),
+    (await app.evaluate(({ clipboard }) => clipboard.readText())).replace(
+      /\r\n/g,
+      "\n",
+    ),
     "const greeting: string = '你好，Markdown';\nconsole.log(greeting);",
   );
   await page.getByRole("button", { name: "复制代码" }).first().waitFor();
@@ -499,7 +502,13 @@ try {
     .waitFor();
   assert.equal(await readFile(copy, "utf8"), localDraft + "\n保留草稿");
 
-  await page.getByRole("button", { name: "新建", exact: true }).click();
+  // Hosted desktops can be 1024 px wide, where New is available through the menu.
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()
+      .items.find((item) => item.label === "文件")
+      .submenu.items.find((item) => item.label === "新建文档")
+      .click(),
+  );
   await editor.fill("# 新建文档\n\n新的内容");
   await app.evaluate(({ dialog }) => {
     dialog.showSaveDialog = async () => ({ canceled: true });
@@ -606,7 +615,12 @@ try {
       return { response: 2, checkboxChecked: false };
     };
   });
-  await page.getByRole("button", { name: "New", exact: true }).click();
+  await app.evaluate(({ Menu }) =>
+    Menu.getApplicationMenu()
+      .items.find((item) => item.label === "File")
+      .submenu.items.find((item) => item.label === "New document")
+      .click(),
+  );
   assert.deepEqual(
     await app.evaluate(() => globalThis.localizedPrompt.buttons),
     ["Save", "Don’t save", "Cancel"],
@@ -678,6 +692,13 @@ try {
     "PASS: system language, Chinese/English UI, native menus and prompts, language persistence, draggable and keyboard-accessible divider, preview visibility and width persistence, draft preservation, rendering, offline preview, Mermaid themes, math, images, zoom, search, refresh, links, drop, sandbox, editing, safe saves and application logo.",
   );
 } catch (error) {
+  const failure = String(error?.stack || error);
+  await writeFile(path.join(results, "error.txt"), failure);
+  if (process.env.GITHUB_ACTIONS) {
+    console.log(
+      `::error::${failure.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A")}`,
+    );
+  }
   if (page) {
     await page
       .screenshot({ path: path.join(results, "failure.png") })
