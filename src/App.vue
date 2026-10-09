@@ -66,6 +66,9 @@ const query = ref("");
 const matches = ref({ matches: 0, activeMatchOrdinal: 0 });
 const searched = ref(false);
 const zoomDialog = ref<HTMLDialogElement>();
+const diagramPanel = ref<HTMLElement>();
+const diagramFullscreen = ref(false);
+const changingFullscreen = ref(false);
 const diagramViewport = ref<HTMLElement>();
 const diagramZoom = ref(1);
 const panning = ref(false);
@@ -77,6 +80,9 @@ const activeHeading = ref("");
 const outlineNav = ref<HTMLElement>();
 const modifierKey = platform === "darwin" ? "⌘" : "Ctrl";
 const enlargedDiagram = ref("");
+const exportingDiagram = ref(false);
+const diagramMessage = ref("");
+const diagramExportError = ref(false);
 const rendered = computed(() =>
   renderMarkdown(previewSource.value, locale.value),
 );
@@ -328,6 +334,54 @@ function addCopyButtons(root: HTMLElement) {
     block.append(button);
   }
 }
+function addDiagramButtons(root: HTMLElement) {
+  for (const expand of root.querySelectorAll<HTMLButtonElement>(".diagram-caption > .diagram-expand")) {
+    expand.title = t("largerDiagram");
+    expand.innerHTML = iconMarkup("zoomIn");
+    const actions = document.createElement("div");
+    actions.className = "diagram-actions";
+    const download = document.createElement("button");
+    download.type = "button";
+    download.className = "diagram-download";
+    download.title = t("downloadDiagram");
+    download.setAttribute("aria-label", t("downloadDiagram"));
+    download.disabled = exportingDiagram.value;
+    download.innerHTML = iconMarkup("drop");
+    expand.replaceWith(actions);
+    actions.append(download, expand);
+  }
+}
+async function downloadDiagram(svg: SVGSVGElement | null | undefined) {
+  if (!svg || exportingDiagram.value) return;
+  exportingDiagram.value = true;
+  diagramExportError.value = false;
+  diagramMessage.value = t("exportingDiagram");
+  const setDisabled = (disabled: boolean) => {
+    article.value?.querySelectorAll<HTMLButtonElement>(".diagram-download")
+      .forEach(button => { button.disabled = disabled; });
+  };
+  setDisabled(true);
+  try {
+    const { width, height } = svg.viewBox.baseVal;
+    const savedPath = await window.reader.exportDiagram({
+      svg: new XMLSerializer().serializeToString(svg),
+      width,
+      height,
+      dark: isDark.value,
+    });
+    diagramMessage.value = savedPath ? t("savedTo", { name: savedPath }) : "";
+    if (savedPath) notify(diagramMessage.value);
+  } catch (value) {
+    const reason = (value instanceof Error ? value.message : String(value))
+      .replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+    diagramExportError.value = true;
+    diagramMessage.value = t("exportDiagramFailed", { reason });
+    if (!zoomDialog.value?.open) showError(diagramMessage.value);
+  } finally {
+    exportingDiagram.value = false;
+    setDisabled(false);
+  }
+}
 async function copyCode(button: HTMLElement) {
   const code = button.closest(".code-block")?.querySelector("pre")?.textContent;
   if (code === undefined || code === null) return;
@@ -372,6 +426,7 @@ async function draw() {
       doc.value?.assetBase ?? "",
     );
     addCopyButtons(article.value);
+    addDiagramButtons(article.value);
     await enhanceDocument(
       article.value,
       isDark.value,
@@ -528,11 +583,16 @@ async function articleClick(event: MouseEvent) {
     await copyCode(copyButton);
     return;
   }
-  const button = target.closest(".diagram-expand");
+  const button = target.closest(".diagram-expand, .diagram-download");
   if (button) {
-    const svg = button.closest(".diagram")?.querySelector("svg");
+    const svg = button.closest(".diagram")?.querySelector<SVGSVGElement>(".mermaid-source.is-rendered > svg");
     if (svg) {
+      if (button.classList.contains("diagram-download")) {
+        await downloadDiagram(svg);
+        return;
+      }
       enlargedDiagram.value = svg.outerHTML;
+      diagramMessage.value = "";
       diagramZoom.value = 1;
       await nextTick();
       zoomDialog.value?.showModal();
@@ -559,6 +619,38 @@ async function articleClick(event: MouseEvent) {
 }
 function zoomDiagram(factor: number) {
   diagramZoom.value = Math.max(0.25, Math.min(4, diagramZoom.value * factor));
+}
+function syncDiagramFullscreen() {
+  diagramFullscreen.value = document.fullscreenElement === diagramPanel.value;
+}
+async function toggleDiagramFullscreen() {
+  if (!diagramPanel.value || changingFullscreen.value) return;
+  changingFullscreen.value = true;
+  try {
+    if (document.fullscreenElement === diagramPanel.value)
+      await document.exitFullscreen();
+    else await diagramPanel.value.requestFullscreen();
+  } catch {
+    diagramExportError.value = true;
+    diagramMessage.value = t("diagramFullscreenFailed");
+  } finally {
+    changingFullscreen.value = false;
+    syncDiagramFullscreen();
+  }
+}
+async function closeDiagram() {
+  if (changingFullscreen.value) return;
+  if (document.fullscreenElement === diagramPanel.value) {
+    await toggleDiagramFullscreen();
+    if (document.fullscreenElement === diagramPanel.value) return;
+  }
+  zoomDialog.value?.close();
+}
+function cancelDiagram(event: Event) {
+  if (document.fullscreenElement === diagramPanel.value || changingFullscreen.value) {
+    event.preventDefault();
+    void toggleDiagramFullscreen();
+  }
 }
 function fitDiagram() {
   const viewport = diagramViewport.value;
@@ -656,6 +748,7 @@ function keyboard(event: KeyboardEvent) {
 onMounted(async () => {
   document.documentElement.dataset.theme = theme.value;
   document.addEventListener("keydown", keyboard);
+  document.addEventListener("fullscreenchange", syncDiagramFullscreen);
   unsubscribers.push(
     window.reader.onDocument(receive),
     window.reader.onError(showError),
@@ -697,6 +790,7 @@ onUnmounted(() => {
   clearTimeout(previewTimer);
   clearTimeout(noticeTimer);
   document.removeEventListener("keydown", keyboard);
+  document.removeEventListener("fullscreenchange", syncDiagramFullscreen);
 });
 </script>
 
@@ -1112,14 +1206,25 @@ onUnmounted(() => {
       ref="zoomDialog"
       class="diagram-dialog"
       aria-labelledby="diagram-dialog-title"
-      @click="$event.target === zoomDialog && zoomDialog?.close()"
+      @click="$event.target === zoomDialog && closeDiagram()"
+      @cancel="cancelDiagram"
     >
+      <div ref="diagramPanel" class="diagram-panel">
       <div class="dialog-toolbar">
         <div class="dialog-title">
           <strong id="diagram-dialog-title">{{ t("diagramPreview") }}</strong>
           <small>{{ t("diagramHint", { key: modifierKey }) }}</small>
         </div>
         <div class="dialog-actions">
+          <button
+            :aria-label="t('downloadDiagram')"
+            :title="exportingDiagram ? t('exportingDiagram') : t('downloadDiagram')"
+            :disabled="exportingDiagram"
+            @click="downloadDiagram(diagramViewport?.querySelector('svg'))"
+          >
+            <Icon name="drop" />
+          </button>
+          <span class="dialog-divider"></span>
           <button
             :aria-label="t('smallerDiagram')"
             :title="t('smallerDiagram')"
@@ -1136,20 +1241,32 @@ onUnmounted(() => {
           >
             <Icon name="plus" /></button
           ><button
+            class="diagram-fit"
             :aria-label="t('fitDiagram')"
             :title="t('fitDiagram')"
             @click="fitDiagram"
           >
-            <Icon name="fit" /></button
+            {{ t("fitDiagram") }}</button
+          ><button
+            :aria-label="t(diagramFullscreen ? 'exitDiagramFullscreen' : 'enterDiagramFullscreen')"
+            :title="t(diagramFullscreen ? 'exitDiagramFullscreen' : 'enterDiagramFullscreen')"
+            :aria-pressed="diagramFullscreen"
+            :disabled="changingFullscreen"
+            @click="toggleDiagramFullscreen"
+          >
+            <Icon :name="diagramFullscreen ? 'exitFullscreen' : 'fit'" /></button
           ><span class="dialog-divider"></span
           ><button
             :aria-label="t('closeDiagram')"
             :title="t('closeDiagram')"
-            @click="zoomDialog?.close()"
+            @click="closeDiagram"
           >
             <Icon name="close" />
           </button>
         </div>
+      </div>
+      <div v-if="diagramMessage" class="diagram-message" :class="{ 'is-error': diagramExportError }" role="status">
+        {{ diagramMessage }}
       </div>
       <div
         ref="diagramViewport"
@@ -1167,7 +1284,7 @@ onUnmounted(() => {
           v-html="enlargedDiagram"
         ></div>
       </div>
+      </div>
     </dialog>
   </div>
 </template>
-

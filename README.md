@@ -95,6 +95,20 @@ npm start
 
 支持 Mermaid 自定义颜色：用 `classDef`／`class` 为一组节点设置样式，`style` 修改单个节点，`linkStyle` 修改连线；也可以在 Mermaid 代码块内部使用 YAML `config` 和 `themeVariables` 设置整张图。文档设置会覆盖相应默认值，仅影响当前图表。完整可运行例子见 [配色示例](examples/mermaid-styles.md)。
 
+### Mermaid 高清图片下载
+
+- 每张已渲染图表右上角依次提供“下载高清图片”和放大镜图标；放大预览窗口的工具栏也可以下载。
+- 点击下载后，通过系统保存窗口选择文件夹和文件名，保存为 **PNG**。取消不会创建文件，导出失败会显示原因，可以再次尝试。
+- 图片包含完整图表，保留中文标签、当前浅色／深色配色及自定义样式，不受预览缩放、拖动或窗口尺寸影响，也不改变 Markdown 或未保存的草稿。
+- 从 SVG 按原始尺寸的 3 倍渲染；小图的长边至少为 2400 像素。超大图等比例限制在最长边 8192 像素、总计 1600 万像素内。
+- 导出在独立沙箱中离线生成，不请求外部资源；依赖外部图片或网络字体的图表，请先改用内嵌资源。保存完成后显示文件位置。
+
+Use the download icon above a diagram or in the expanded viewer to save a full-resolution PNG through the system save dialog. Export preserves the current theme and custom colors, independently of the viewer's zoom and pan.
+
+### 图表全屏预览
+
+放大预览工具栏的四角图标用于进入／退出真正的屏幕全屏；全屏时图标和提示会切换为“退出全屏”。按 Esc 先退出全屏，回到图表预览；点击关闭图表则退出全屏并返回文档。独立的“适应窗口”按钮仅调整图表缩放，让完整图表适合当前预览区域。
+
 这不是所有 Markdown 方言的完整实现。MDX / Vue 自定义组件与脚本、Obsidian 双向链接和笔记嵌入、站点构建指令、PlantUML、完整 LaTeX 文档不在首版范围内。未识别的代码块保留为源码；图表错误只影响对应图表。
 
 ## 文件与安全边界
@@ -148,6 +162,8 @@ npm run dist:win   # Windows x64 NSIS 安装包
 
 ### 本次验证（2026-10-09）
 
+- 图表全屏修复：四角按钮改为真实全屏切换，适应窗口使用独立文字按钮。构建和 macOS Electron 阶段验收通过，检查了系统窗口全屏状态、预览铺满屏幕、按钮／Esc 退出、全屏中关闭图表及重新打开；原有下载和编辑验收也通过。本次没有重新发布安装包或在 Windows 验收。
+- Mermaid 高清下载：41 项单元测试、类型检查与构建通过；macOS Electron 阶段验收覆盖页面／放大窗口导出一致、深色与自定义颜色、取消／保存失败和草稿保留。已检查中文流程图（2853 × 2994）和时序图（2400 × 1690）的实际 PNG。此改动尚未发布新安装包，Windows／Apple Silicon 本次未重验。
 - [v0.3.1 首次公开发布](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.3.1)：Windows x64、Mac Intel、Mac Apple Silicon 在 GitHub 托管环境中全部通过阶段测试、构建和打包后应用验收，三个安装包及 `SHA256SUMS.txt` 已公开。修正了验收脚本对 Windows 剪贴板换行和构建机窄屏菜单的假设；没有跳过功能断言。下文的“尚未实机验收”是此前本地版本的记录，不代表本次 CI 未执行。安装向导、其他系统版本仍需人工验收。
 - 0.3.0 增加中文／English 界面、系统首选语言识别、手动语言记忆、可拖动分隔线和隐藏预览；27 项自动化测试、类型检查与构建通过，开发构建通过真实 Electron 断网验收，包括语言切换后的菜单与保存提示、草稿保留、分隔线鼠标／键盘操作，以及重启后的语言、宽度和预览可见性记忆。macOS Intel／Apple Silicon 和 Windows x64 安装包已生成，本阶段没有重复运行打包版全套验收。
 - 0.2.1 增加参考图的默认蓝色流程图样式、深色适配和配色示例；14 项自动化测试、类型检查与构建通过，开发构建及 Mac Intel 打包版通过真实 Electron 断网验收，覆盖默认颜色、圆角、标签尺寸与布局、自定义颜色优先级、图表间配置隔离及放大预览。macOS Intel／Apple Silicon 和 Windows x64 安装包已生成。

@@ -47,6 +47,48 @@ const launch = () =>
 let app = await launch();
 let page;
 const errors = [];
+async function fullscreenTransition(action, entering) {
+  await app.evaluate(({ BrowserWindow }, entering) => {
+    globalThis.fullscreenTransition = new Promise(resolve => {
+      BrowserWindow.getAllWindows()[0].once(
+        entering ? "enter-full-screen" : "leave-full-screen", resolve,
+      );
+    });
+  }, entering);
+  await action();
+  await page.waitForFunction(entering => !!document.fullscreenElement === entering, entering);
+  await app.evaluate(() => globalThis.fullscreenTransition);
+}
+async function saveDiagram(button, name) {
+  const target = path.join(results, name);
+  await rm(target, { force: true });
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async (_parent, options) => {
+      globalThis.exportOptions = options;
+      return { canceled: false, filePath: file };
+    };
+  }, target);
+  await button.click();
+  await page.waitForFunction(() => !document.querySelector('.diagram-download:disabled'));
+  const png = await readFile(target);
+  assert.equal(png.subarray(1, 4).toString(), "PNG");
+  const dimensions = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+  assert.ok(Math.max(dimensions.width, dimensions.height) >= 2400);
+  assert.ok(Math.max(dimensions.width, dimensions.height) <= 8192);
+  assert.ok(dimensions.width * dimensions.height <= 16_000_000);
+  return { target, png, dimensions };
+}
+async function assertImageColor(file, rgb, minimum = 100) {
+  const count = await app.evaluate(({ nativeImage }, { file, rgb }) => {
+    const pixels = nativeImage.createFromPath(file).toBitmap();
+    let count = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] === rgb[2] && pixels[i + 1] === rgb[1] && pixels[i + 2] === rgb[0] && pixels[i + 3] === 255) count++;
+    }
+    return count;
+  }, { file, rgb });
+  assert.ok(count >= minimum, `${file}: expected color ${rgb} in rendered PNG, found ${count} pixels`);
+}
 try {
   page = await app.firstWindow();
   await page.context().setOffline(true);
@@ -212,6 +254,33 @@ try {
     .locator(".diagram")
     .first()
     .screenshot({ path: path.join(results, "original-mermaid.png") });
+  const inlineDownload = page.getByRole("button", { name: "下载高清图片" }).first();
+  const sourceBeforeExport = await readFile(sample, "utf8");
+  const exported = await saveDiagram(inlineDownload, "export-gateway.png");
+  await assertImageColor(exported.target, [229, 242, 255]);
+  await assertImageColor(exported.target, [51, 156, 255]);
+  const viewBox = await originalDiagram.locator(":scope > svg").evaluate(svg => ({ width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height }));
+  assert.ok(Math.abs(exported.dimensions.width / exported.dimensions.height - viewBox.width / viewBox.height) < 0.002);
+  assert.equal(await readFile(sample, "utf8"), sourceBeforeExport);
+  assert.deepEqual(await app.evaluate(() => globalThis.exportOptions.filters), [{ name: "PNG", extensions: ["png"] }]);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  // Cancel leaves the existing image untouched and does not open a rendering window.
+  await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
+  await inlineDownload.click();
+  await page.waitForFunction(() => !document.querySelector('.diagram-download:disabled'));
+  assert.ok((await readFile(exported.target)).equals(exported.png));
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file.slice(0, -4) });
+    dialog.showMessageBox = async () => ({ response: 0 });
+  }, exported.target);
+  await inlineDownload.click();
+  await page.waitForFunction(() => !document.querySelector('.diagram-download:disabled'));
+  assert.ok((await readFile(exported.target)).equals(exported.png), "canceling replacement after adding .png must preserve the existing file");
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  assert.match(await page.evaluate(async () => {
+    try { await window.reader.exportDiagram({ svg: '<svg/>', width: -1, height: 100, dark: false }); }
+    catch (error) { return error.message; }
+  }), /无效/);
   await page
     .getByRole("button", { name: "放大图表", exact: true })
     .first()
@@ -220,6 +289,55 @@ try {
     await page.locator("dialog").evaluate((dialog) => dialog.open),
     true,
   );
+  // The corner icon enters actual fullscreen; fitting the graph is a separate action.
+  const enterFullscreen = page.getByRole("button", { name: "全屏查看图表", exact: true });
+  await fullscreenTransition(() => enterFullscreen.click(), true);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFullScreen()), true);
+  assert.equal(await page.locator(".diagram-panel").evaluate(panel => {
+    const bounds = panel.getBoundingClientRect();
+    return Math.abs(bounds.width - innerWidth) <= 1 && Math.abs(bounds.height - innerHeight) <= 1;
+  }), true);
+  await page.screenshot({ path: path.join(results, "diagram-fullscreen.png") });
+  await page.getByRole("button", { name: "适应窗口", exact: true }).click();
+  await page.waitForFunction(() => {
+    const viewport = document.querySelector('.diagram-viewport').getBoundingClientRect();
+    const graph = document.querySelector('.enlarged-diagram > svg').getBoundingClientRect();
+    return graph.bottom <= viewport.bottom + 1 && graph.right <= viewport.right + 1;
+  });
+  await fullscreenTransition(() => page.getByRole("button", { name: "退出全屏", exact: true }).click(), false);
+  assert.equal(await page.locator("dialog").evaluate(dialog => dialog.open), true);
+  await fullscreenTransition(() => enterFullscreen.click(), true);
+  await fullscreenTransition(() => page.keyboard.press("Escape"), false);
+  assert.equal(await page.locator("dialog").evaluate(dialog => dialog.open), true, "Escape exits fullscreen before closing the viewer");
+  await fullscreenTransition(() => enterFullscreen.click(), true);
+  await fullscreenTransition(() => page.getByRole("button", { name: "关闭图表", exact: true }).click(), false);
+  await page.waitForFunction(() => !document.querySelector('dialog').open);
+  await page.getByRole("button", { name: "放大图表", exact: true }).first().click();
+  assert.equal(await enterFullscreen.getAttribute("aria-pressed"), "false");
+  await page.locator("dialog").getByRole("button", { name: "放大图表", exact: true }).click();
+  await page.locator(".diagram-viewport").evaluate(viewport => viewport.scrollTo(120, 250));
+  const modalExport = await saveDiagram(page.locator("dialog").getByRole("button", { name: "下载高清图片" }), "export-gateway-modal.png");
+  assert.deepEqual(modalExport.dimensions, exported.dimensions);
+  assert.ok(modalExport.png.equals(exported.png), "modal pan/zoom must not change the full exported diagram");
+  // A save failure stays visible inside the modal and enables retry without losing the graph.
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, path.join(fixtures, "missing-folder", "failed.png"));
+  await page.locator("dialog").getByRole("button", { name: "下载高清图片" }).click();
+  await page.locator(".diagram-message.is-error").waitFor();
+  assert.match(await page.locator(".diagram-message").textContent(), /图片导出失败/);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  assert.equal(await page.locator("dialog").getByRole("button", { name: "下载高清图片" }).isEnabled(), true);
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
+  }, sample);
+  await page.locator("dialog").getByRole("button", { name: "下载高清图片" }).click();
+  await page.waitForFunction(() => document.querySelector('.diagram-message')?.textContent.includes('.png'));
+  assert.equal(await readFile(sample, "utf8"), sourceBeforeExport);
+  await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
+  await page.locator("dialog").getByRole("button", { name: "下载高清图片" }).click();
+  await page.locator(".diagram-message").waitFor({ state: "detached" });
+  await page.locator("dialog").getByRole("button", { name: "缩小图表", exact: true }).click();
   await page
     .locator("dialog")
     .screenshot({ path: path.join(results, "diagram-expanded.png") });
@@ -264,6 +382,9 @@ try {
     .locator(".reading-scroll")
     .evaluate((element) => element.scrollTo(0, 0));
   await page.screenshot({ path: path.join(results, "document-dark.png") });
+  const darkExport = await saveDiagram(inlineDownload, "export-dark.png");
+  await assertImageColor(darkExport.target, [32, 61, 85]);
+  await assertImageColor(darkExport.target, [23, 33, 43]);
 
   await page.getByRole("button", { name: "查找文档" }).click();
   await page.getByRole("textbox", { name: "搜索内容" }).fill("架构图");
@@ -551,6 +672,12 @@ try {
     ...customFills,
     ["rgb(229, 242, 255)", "rgb(229, 242, 255)"],
   ]);
+  const draftBeforeExport = await editor.inputValue();
+  const styledExport = await saveDiagram(inlineDownload, "export-custom.png");
+  await assertImageColor(styledExport.target, [220, 252, 231]);
+  await assertImageColor(styledExport.target, [249, 115, 22]);
+  assert.equal(await editor.inputValue(), draftBeforeExport);
+  assert.ok(await page.locator(".unsaved-label").count(), "export must keep the unsaved draft");
   assert.equal(
     await styledDiagrams
       .first()
@@ -689,7 +816,7 @@ try {
   );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
-    "PASS: system language, Chinese/English UI, native menus and prompts, language persistence, draggable and keyboard-accessible divider, preview visibility and width persistence, draft preservation, rendering, offline preview, Mermaid themes, math, images, zoom, search, refresh, links, drop, sandbox, editing, safe saves and application logo.",
+    "PASS: system language, Chinese/English UI, native menus and prompts, language persistence, draggable and keyboard-accessible divider, preview visibility and width persistence, draft preservation, rendering, offline preview, Mermaid themes and high-resolution PNG export, math, images, zoom, search, refresh, links, drop, sandbox, editing, safe saves and application logo.",
   );
 } catch (error) {
   const failure = String(error?.stack || error);

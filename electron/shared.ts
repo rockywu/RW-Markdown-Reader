@@ -21,6 +21,7 @@ export interface ReaderAPI {
   newDocument: (content?: string) => Promise<DocumentData | null>;
   updateDraft: (id: string, content: string, editing: boolean) => void;
   save: (saveAs?: boolean) => Promise<DocumentData | null>;
+  exportDiagram: (diagram: DiagramExport) => Promise<string | null>;
   followLink: (href: string) => Promise<void>;
   reload: () => Promise<DocumentData | null>;
   find: (text: string, forward?: boolean) => Promise<void>;
@@ -33,4 +34,11 @@ export interface ReaderAPI {
     callback: (result: { matches: number; activeMatchOrdinal: number }) => void,
   ) => () => void;
   onSaved: (callback: (name: string) => void) => () => void;
+}
+
+export interface DiagramExport {
+  svg: string;
+  width: number;
+  height: number;
+  dark: boolean;
 }

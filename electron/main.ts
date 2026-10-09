@@ -23,6 +23,7 @@ import {
   MAX_DOCUMENT_BYTES,
 } from "./files";
 import type { DocumentData } from "./shared";
+import { exportDiagram } from "./diagram-export";
 import {
   systemLocale,
   translate,
@@ -454,6 +455,9 @@ function registerIPC() {
   handle("reader:save", (saveAs: unknown) =>
     exclusive(() => saveCurrent(saveAs === true)),
   );
+  handle("reader:export-diagram", (diagram: unknown) =>
+    window ? exportDiagram(window, diagram, current?.name || "Mermaid", locale) : null,
+  );
   handle("reader:drop", (file: unknown) => {
     if (typeof file !== "string" || !path.isAbsolute(file))
       throw new Error(t("invalidDrop"));
@@ -517,10 +521,21 @@ else {
     await loadLocale();
     app.setAppUserModelId("dev.markview.reader");
     if (process.platform === "darwin") app.dock?.setIcon(icon);
+    const allowFullscreen = (
+      contents: Electron.WebContents | null,
+      permission: string,
+      details: { isMainFrame: boolean; requestingUrl?: string },
+    ) => !!window && contents === window.webContents &&
+      permission === "fullscreen" && details.isMainFrame &&
+      details.requestingUrl?.split("#")[0] === rendererURL;
     session.defaultSession.setPermissionRequestHandler(
-      (_wc, _permission, callback) => callback(false),
+      (contents, permission, callback, details) =>
+        callback(allowFullscreen(contents, permission, details)),
     );
-    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.setPermissionCheckHandler(
+      (contents, permission, _origin, details) =>
+        allowFullscreen(contents, permission, details),
+    );
     await protocol.handle("markview-asset", async (request) => {
       try {
         if (!current?.path || !request.url.startsWith(current.assetBase))

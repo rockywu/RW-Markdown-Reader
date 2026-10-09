@@ -4,6 +4,7 @@ export const icons = {
   outline:
     '<path d="M4 6h2M4 12h2M4 18h2M9.5 6H20M9.5 12H20M9.5 18H17"/>',
   search: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
+  zoomIn: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-5-5M10.5 7.5v6M7.5 10.5h6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>',
   moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10Z"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
@@ -12,6 +13,7 @@ export const icons = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   fit: '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>',
+  exitFullscreen: '<path d="M4 9h5V4M15 4v5h5M20 15h-5v5M9 20v-5H4"/>',
   drop: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 15v3A1.5 1.5 0 0 0 6 19.5h12a1.5 1.5 0 0 0 1.5-1.5v-3"/>',
   copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M15.5 8.5V6A1.5 1.5 0 0 0 14 4.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',

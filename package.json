@@ -1,6 +1,6 @@
 {
   "name": "markview",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "离线 Markdown 编辑、实时预览、Mermaid 与数学公式",
   "author": "Markview contributors",

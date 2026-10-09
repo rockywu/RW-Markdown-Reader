@@ -1169,18 +1169,23 @@ kbd {
   font-size: 11px;
   color: var(--muted);
 }
-.diagram-expand {
-  font-family: inherit;
-  font-size: 12px;
+.diagram-actions {
+  display: flex;
+  gap: 2px;
+}
+.diagram-actions button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
   border-radius: 5px;
-  padding: 3px 8px;
   color: var(--accent);
 }
-/* A diagram can only be enlarged once Mermaid has produced an SVG. */
-.diagram:not(:has(.is-rendered)) .diagram-expand {
+/* Controls require a successfully rendered graph. */
+.diagram:not(:has(.is-rendered)) .diagram-actions {
   visibility: hidden;
 }
-.diagram:has(.render-error) .diagram-expand {
+.diagram:has(.render-error) .diagram-actions {
   display: none;
 }
 .mermaid-source {
@@ -1358,6 +1363,16 @@ kbd {
   background: rgb(15 23 42 / 42%);
   backdrop-filter: blur(4px);
 }
+.diagram-panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--paper);
+}
+.diagram-panel:fullscreen {
+  width: 100vw;
+  height: 100vh;
+}
 .dialog-toolbar {
   height: 56px;
   border-bottom: 1px solid var(--border);
@@ -1374,6 +1389,24 @@ kbd {
   min-width: 0;
   white-space: nowrap;
 }
+.diagram-message {
+  position: absolute;
+  z-index: 1;
+  top: 64px;
+  left: 20px;
+  right: 20px;
+  width: fit-content;
+  max-width: calc(100% - 40px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.diagram-message.is-error { color: var(--danger); }
 .dialog-title strong {
   font-size: 15px;
 }
@@ -1387,6 +1420,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 .dialog-actions button {
   width: 32px;
@@ -1398,6 +1432,12 @@ kbd {
 }
 .dialog-actions button:not(:disabled):hover {
   color: var(--text);
+}
+.dialog-actions .diagram-fit {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .dialog-actions span {
   min-width: 48px;

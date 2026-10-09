@@ -1,3 +1,15 @@
+## v0.4.0 更新 / What's new
+
+- Mermaid 图表和放大预览窗口新增高清图片下载，通过系统保存窗口选择文件夹和文件名，保存完整 PNG。
+- 默认按图形原始尺寸的 3 倍生成，小图长边至少 2400 像素；超大图等比例限制为最长边 8192 像素、总计 1600 万像素。
+- 图片保留中文、当前浅色／深色主题和自定义配色，不受预览缩放或拖动位置影响。取消下载和保存失败均保留原文档及草稿。
+- 图表查看改用放大镜图标。预览窗口的四角按钮现在可以真正进入／退出全屏，Esc 退出全屏；“适应窗口”独立显示，关闭图表会自动退出全屏。
+- 新增按钮、保存提示和错误信息均支持中文 / English。
+
+- Download complete, high-resolution Mermaid PNGs from the document or expanded viewer, preserving labels, themes, and custom colors independently of zoom and pan.
+- The viewer now supports real fullscreen, Escape to exit, and a separate Fit to window control.
+- Export is rendered offline in an isolated sandbox. External images and network fonts are not fetched; use embedded resources for those diagrams.
+
 ## 下载 / Downloads
 
 请在下方 **Assets** 中选择对应的安装包。`Source code` 是源码压缩包，不是应用安装包。

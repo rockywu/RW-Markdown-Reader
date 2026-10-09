@@ -20,6 +20,7 @@ const api: ReaderAPI = {
   updateDraft: (id, content, editing) =>
     ipcRenderer.send("reader:draft", id, content, editing),
   save: (saveAs = false) => ipcRenderer.invoke("reader:save", saveAs),
+  exportDiagram: (diagram) => ipcRenderer.invoke("reader:export-diagram", diagram),
   followLink: (href) => ipcRenderer.invoke("reader:link", href),
   reload: () => ipcRenderer.invoke("reader:reload"),
   find: (text, forward = true) =>
