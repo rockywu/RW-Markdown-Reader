@@ -158,10 +158,11 @@ npm run dist:win   # Windows x64 NSIS 安装包
 
 在 Actions 点击 **Run workflow**、选择 `main`，只构建并保留 14 天的测试安装包；选择已有版本标签则会尝试发布该版本。失败时可在 Actions 重跑失败任务；已公开的版本不会被覆盖，应发布新版本。不要修改已发布的标签。
 
-当前是本地试用构建，没有开发者证书签名或 Apple 公证。分发给其他用户前需要配置平台签名、公证并进行安装验收；未签名文件可能显示系统安全提示。
+当前发布的安装包没有开发者证书签名或 Apple 公证，系统可能显示安全提示。平台签名、公证及不同系统版本的人工安装验收仍待完成。
 
 ### 本次验证（2026-10-09）
 
+- [v0.4.1 发布](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.4.1)：包含 Mermaid 高清 PNG 下载与真实全屏预览。Windows x64、Mac Intel、Mac Apple Silicon 均通过 GitHub 原生环境的单元测试、构建及打包后应用验收，安装包和 `SHA256SUMS.txt` 已公开。发布验证期间修正了 Windows 导出窗口尺寸限制，保留完整图像尺寸检查；v0.4.0 未公开安装包。下列“未发布／未验收”是各功能开发阶段的历史记录。
 - 图表全屏修复：四角按钮改为真实全屏切换，适应窗口使用独立文字按钮。构建和 macOS Electron 阶段验收通过，检查了系统窗口全屏状态、预览铺满屏幕、按钮／Esc 退出、全屏中关闭图表及重新打开；原有下载和编辑验收也通过。本次没有重新发布安装包或在 Windows 验收。
 - Mermaid 高清下载：41 项单元测试、类型检查与构建通过；macOS Electron 阶段验收覆盖页面／放大窗口导出一致、深色与自定义颜色、取消／保存失败和草稿保留。已检查中文流程图（2853 × 2994）和时序图（2400 × 1690）的实际 PNG。此改动尚未发布新安装包，Windows／Apple Silicon 本次未重验。
 - [v0.3.1 首次公开发布](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.3.1)：Windows x64、Mac Intel、Mac Apple Silicon 在 GitHub 托管环境中全部通过阶段测试、构建和打包后应用验收，三个安装包及 `SHA256SUMS.txt` 已公开。修正了验收脚本对 Windows 剪贴板换行和构建机窄屏菜单的假设；没有跳过功能断言。下文的“尚未实机验收”是此前本地版本的记录，不代表本次 CI 未执行。安装向导、其他系统版本仍需人工验收。
