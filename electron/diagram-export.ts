@@ -21,6 +21,7 @@ export async function exportDiagram(
   let renderer: BrowserWindow | undefined;
   let temporary: string | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastFrameSize: Electron.Size | undefined;
   try {
     const result = await dialog.showSaveDialog(parent, {
       title: translate(locale, "exportDiagramTitle"),
@@ -73,10 +74,13 @@ export async function exportDiagram(
         contextIsolation: true,
         nodeIntegration: false,
         webviewTag: false,
-        offscreen: true,
+        offscreen: { deviceScaleFactor: 1 },
         backgroundThrottling: false,
       },
     });
+    // Windows can constrain initial bounds to the monitor; OSR uses the outer window size.
+    renderer.setMinimumSize(size.width, size.height);
+    renderer.setSize(size.width, size.height);
     const contents = renderer.webContents;
     contents.setWindowOpenHandler(() => ({ action: "deny" }));
     contents.on("will-navigate", (event) => event.preventDefault());
@@ -108,6 +112,8 @@ export async function exportDiagram(
       // Animation frames only finish layout; wait for the offscreen compositor's pixels.
       const captured = await new Promise<Electron.NativeImage>(resolve => {
         const painted = (_event: Electron.Event, _dirty: Electron.Rectangle, image: Electron.NativeImage) => {
+          lastFrameSize = image.getSize();
+          if (lastFrameSize.width < size.width || lastFrameSize.height < size.height) return;
           const pixels = image.toBitmap();
           // Chromium can deliver the initial, solid background before the diagram's frame.
           for (let offset = 4; offset < pixels.length; offset += 4) {
@@ -123,13 +129,19 @@ export async function exportDiagram(
       });
       if (captured.isEmpty() || captured.getSize().width < size.width || captured.getSize().height < size.height)
         throw new Error(translate(locale, "invalidDiagram"));
-      // Retina capture may contain more pixels; normalize down to the requested dimensions.
-      return captured.resize({ ...size, quality: "best" }).toPNG();
+      // OSR renders at one pixel per CSS pixel; remove any native window insets, never upscale.
+      return captured.crop({ x: 0, y: 0, ...size }).toPNG();
     };
     const png = await Promise.race([
       render(),
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(translate(locale, "exportDiagramTimeout"))), 30_000);
+        timer = setTimeout(() => reject(new Error(lastFrameSize &&
+          (lastFrameSize.width < size.width || lastFrameSize.height < size.height)
+          ? translate(locale, "diagramImageSize", {
+            actual: `${lastFrameSize.width} × ${lastFrameSize.height}`,
+            expected: `${size.width} × ${size.height}`,
+          })
+          : translate(locale, "exportDiagramTimeout"))), 30_000);
       }),
     ]);
     temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`);

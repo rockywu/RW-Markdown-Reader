@@ -70,7 +70,10 @@ async function saveDiagram(button, name) {
   }, target);
   await button.click();
   await page.waitForFunction(() => !document.querySelector('.diagram-download:disabled'));
-  const png = await readFile(target);
+  const png = await readFile(target).catch(async error => {
+    const messages = await page.locator('.diagram-message.is-error, .error-banner').allTextContents();
+    throw new Error(`PNG was not saved: ${messages.join(' | ')}`, { cause: error });
+  });
   assert.equal(png.subarray(1, 4).toString(), "PNG");
   const dimensions = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
   assert.ok(Math.max(dimensions.width, dimensions.height) >= 2400);

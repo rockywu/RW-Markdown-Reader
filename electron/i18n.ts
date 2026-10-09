@@ -53,6 +53,10 @@ const messages = {
   invalidDiagram: { zh: "图表数据无效或过大，无法导出。", en: "The diagram is invalid or too large to export." },
   exportDiagramFailed: { zh: "图片导出失败：{reason}", en: "Image export failed: {reason}" },
   exportDiagramTimeout: { zh: "生成图片超时，请重试。", en: "Image rendering timed out. Please try again." },
+  diagramImageSize: {
+    zh: "图片渲染尺寸不完整（{actual}，需要 {expected}）。请重试。",
+    en: "Incomplete image dimensions ({actual}; expected {expected}). Please try again.",
+  },
   pngExtension: { zh: "请使用 .png 文件扩展名。", en: "Please use the .png file extension." },
   document: { zh: "文档", en: "Document" },
   unsaved: { zh: "未保存", en: "Unsaved" },
