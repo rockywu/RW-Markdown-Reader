@@ -14,15 +14,17 @@ import path from "node:path";
 
 const root = process.cwd();
 const packaged = process.argv.includes("--packaged");
+const releaseDirectory = path.resolve(
+  process.env.MARKVIEW_RELEASE_DIR || path.join(root, "release"),
+);
 const executablePath = packaged
   ? process.platform === "darwin"
     ? path.join(
-        root,
-        "release",
+        releaseDirectory,
         process.arch === "arm64" ? "mac-arm64" : "mac",
         "Markview.app/Contents/MacOS/Markview",
       )
-    : path.join(root, "release/win-unpacked/Markview.exe")
+    : path.join(releaseDirectory, "win-unpacked/Markview.exe")
   : undefined;
 const fixtures = await mkdtemp(path.join(tmpdir(), "markview-e2e-"));
 const results = path.join(root, "test-results");
@@ -32,21 +34,49 @@ const sample = path.join(fixtures, "compatibility.md");
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.MARKVIEW_DEV_URL;
-const app = await electron.launch({
-  executablePath,
-  args: [
-    ...(packaged ? [] : [root]),
-    `--user-data-dir=${path.join(fixtures, "profile")}`,
-  ],
-  env,
-  timeout: 60000,
-});
+const launch = () =>
+  electron.launch({
+    executablePath,
+    args: [
+      ...(packaged ? [] : [root]),
+      `--user-data-dir=${path.join(fixtures, "profile")}`,
+    ],
+    env,
+    timeout: 60000,
+  });
+let app = await launch();
 let page;
 const errors = [];
 try {
   page = await app.firstWindow();
   await page.context().setOffline(true);
   page.on("pageerror", (error) => errors.push(error.message));
+  const systemLanguage = await app.evaluate(
+    ({ app }) => app.getPreferredSystemLanguages()[0] || app.getLocale(),
+  );
+  const expectedLanguage = /^zh(?:[-_]|$)/i.test(systemLanguage)
+    ? "zh-CN"
+    : "en";
+  await page.waitForFunction(
+    (language) =>
+      document.documentElement.lang === language &&
+      !!document.querySelector(".language-select"),
+    expectedLanguage,
+  );
+  assert.equal(
+    await page.evaluate(() => window.reader.getLocale()),
+    expectedLanguage === "zh-CN" ? "zh" : "en",
+  );
+  await page
+    .getByRole("combobox", { name: "界面语言 / Interface language" })
+    .selectOption("en");
+  await page
+    .getByRole("heading", { name: "Give your words room to breathe." })
+    .waitFor();
+  await page
+    .getByRole("combobox", { name: "界面语言 / Interface language" })
+    .selectOption("zh");
+  await page.getByRole("heading", { name: "让文字，清晰可见。" }).waitFor();
   await page
     .locator(".mermaid-source.is-rendered svg")
     .first()
@@ -289,7 +319,7 @@ try {
     0,
   );
   // Editing is local until an explicit save, including Mermaid and formula preview.
-  await page.getByRole("button", { name: "编辑与预览", exact: true }).click();
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
   const editor = page.getByRole("textbox", {
     name: "Markdown 源码",
     exact: true,
@@ -313,9 +343,61 @@ try {
   await page.screenshot({
     path: path.join(results, "editor-live-preview.png"),
   });
+  // Resize with both pointer and keyboard, then hide/show without touching the draft.
+  const divider = page.getByRole("separator", {
+    name: "调整编辑区与预览区宽度",
+  });
+  const dividerBox = await divider.boundingBox();
+  const oldWidth = await page
+    .locator(".editor-pane")
+    .evaluate((pane) => pane.clientWidth);
+  await page.mouse.move(
+    dividerBox.x + dividerBox.width / 2,
+    dividerBox.y + 120,
+  );
+  await page.mouse.down();
+  await page.mouse.move(dividerBox.x + 150, dividerBox.y + 120, { steps: 8 });
+  await page.mouse.up();
+  assert.ok(
+    (await page.locator(".editor-pane").evaluate((pane) => pane.clientWidth)) >
+      oldWidth + 100,
+  );
+  await divider.focus();
+  await divider.press("Home");
+  assert.equal(await divider.getAttribute("aria-valuenow"), "20");
+  await divider.press("End");
+  assert.equal(await divider.getAttribute("aria-valuenow"), "80");
+  await divider.dblclick();
+  assert.equal(await divider.getAttribute("aria-valuenow"), "45");
+  await divider.press("ArrowRight");
+  assert.equal(await divider.getAttribute("aria-valuenow"), "47");
+  await page.getByRole("button", { name: "隐藏预览", exact: true }).click();
+  assert.equal(await page.locator(".preview-pane").isVisible(), false);
+  assert.equal(await divider.count(), 0);
+  assert.ok(
+    await page
+      .locator(".editor-pane")
+      .evaluate(
+        (pane) =>
+          Math.abs(pane.clientWidth - pane.parentElement.clientWidth) < 2,
+      ),
+  );
+  await editor.fill(edited + "\n## 隐藏时仍可编辑\n");
+  await page.screenshot({
+    path: path.join(results, "editor-preview-hidden.png"),
+  });
+  await page.getByRole("button", { name: "阅读", exact: true }).click();
+  assert.equal(await page.locator(".preview-pane").isVisible(), true);
+  await page.getByRole("heading", { name: "隐藏时仍可编辑" }).waitFor();
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
+  assert.equal(await page.locator(".preview-pane").isVisible(), false);
+  await page.getByRole("button", { name: "显示预览", exact: true }).click();
+  assert.equal(await divider.getAttribute("aria-valuenow"), "47");
+  assert.equal(await editor.inputValue(), edited + "\n## 隐藏时仍可编辑\n");
+  await editor.fill(edited);
   await page.getByRole("button", { name: "阅读", exact: true }).click();
   assert.equal(await editor.isVisible(), false);
-  await page.getByRole("button", { name: "编辑与预览", exact: true }).click();
+  await page.getByRole("button", { name: "编辑", exact: true }).click();
   assert.equal(await editor.inputValue(), edited);
   await app.evaluate(({ Menu }) =>
     Menu.getApplicationMenu()
@@ -468,6 +550,66 @@ try {
     path: path.join(results, "mermaid-custom-colors.png"),
   });
 
+  const preservedDraft = await editor.inputValue();
+  await page
+    .getByRole("combobox", { name: "界面语言 / Interface language" })
+    .selectOption("en");
+  await page
+    .getByRole("button", { name: "Hide preview", exact: true })
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("textbox", { name: "Markdown source", exact: true })
+      .inputValue(),
+    preservedDraft,
+  );
+  assert.deepEqual(
+    await app.evaluate(({ Menu }) =>
+      Menu.getApplicationMenu()
+        .items.filter((item) => ["File", "Edit", "View"].includes(item.label))
+        .map((item) => item.label),
+    ),
+    ["File", "Edit", "View"],
+  );
+  await app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = async (_window, options) => {
+      globalThis.localizedPrompt = options;
+      return { response: 2, checkboxChecked: false };
+    };
+  });
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  assert.deepEqual(
+    await app.evaluate(() => globalThis.localizedPrompt.buttons),
+    ["Save", "Don’t save", "Cancel"],
+  );
+  assert.match(
+    await app.evaluate(() => globalThis.localizedPrompt.message),
+    /^Save changes to /,
+  );
+  assert.equal(
+    await page.locator(".source-editor").inputValue(),
+    preservedDraft,
+  );
+  const invalidFile = path.join(fixtures, "invalid.txt");
+  await writeFile(invalidFile, "Not a Markdown file");
+  await app.evaluate(({ dialog }, file) => {
+    dialog.showOpenDialog = async () => ({
+      canceled: false,
+      filePaths: [file],
+    });
+  }, invalidFile);
+  await page.getByRole("button", { name: /Open document/ }).click();
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Select a .md or .markdown document." })
+    .waitFor();
+  await page.getByRole("button", { name: "Dismiss error" }).click();
+  await page.getByRole("button", { name: "Switch to light theme" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector(".unsaved-label"));
+  await page.screenshot({ path: path.join(results, "editor-english.png") });
+  await page.getByRole("button", { name: "Hide preview", exact: true }).click();
+
   const logo = await page.locator(".brand-logo").evaluate((img) => ({
     loaded: img.complete && img.naturalWidth > 0,
     url: img.src,
@@ -481,9 +623,30 @@ try {
       .locator(".toolbar")
       .evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
   );
+  await app.close();
+  app = await launch();
+  page = await app.firstWindow();
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.context().setOffline(true);
+  await page
+    .getByRole("heading", { name: "Give your words room to breathe." })
+    .waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.lang), "en");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Show preview", exact: true })
+    .waitFor();
+  assert.equal(await page.locator(".preview-pane").isVisible(), false);
+  await page.getByRole("button", { name: "Show preview", exact: true }).click();
+  assert.equal(
+    await page
+      .getByRole("separator", { name: "Resize editor and preview" })
+      .getAttribute("aria-valuenow"),
+    "47",
+  );
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
-    "PASS: rendering, offline preview, original Mermaid, blue palette, non-overlapping labels, custom colors and theme isolation, math, images, zoom, themes, search, refresh, links, drop, sandbox, live editing, save, save as, new document, external conflict protection, cancel open/close/quit, save-before-open, responsive editor and application logo.",
+    "PASS: system language, Chinese/English UI, native menus and prompts, language persistence, draggable and keyboard-accessible divider, preview visibility and width persistence, draft preservation, rendering, offline preview, Mermaid themes, math, images, zoom, search, refresh, links, drop, sandbox, editing, safe saves and application logo.",
   );
 } catch (error) {
   if (page) {

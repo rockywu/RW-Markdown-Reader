@@ -6,6 +6,8 @@ import alerts from "markdown-it-github-alerts";
 import hljs from "highlight.js/lib/common";
 import { load, FAILSAFE_SCHEMA } from "js-yaml";
 
+import { translate, type Locale } from "../electron/i18n";
+
 export interface Heading {
   id: string;
   text: string;
@@ -43,22 +45,27 @@ const md = new MarkdownIt({
   .use(footnote)
   .use(alerts);
 
-for (const type of ["info", "tip", "warning", "danger", "details", "note"]) {
+for (const type of [
+  "info",
+  "tip",
+  "warning",
+  "danger",
+  "details",
+  "note",
+] as const) {
   md.use(container, type, {
-    render(tokens: any[], index: number) {
+    render(
+      tokens: any[],
+      index: number,
+      _options: unknown,
+      env: { locale: Locale },
+    ) {
       const token = tokens[index];
       if (token.nesting === -1)
         return type === "details" ? "</details>\n" : "</aside>\n";
       const title =
         token.info.trim().slice(type.length).trim() ||
-        {
-          info: "信息",
-          tip: "提示",
-          warning: "注意",
-          danger: "警告",
-          details: "展开详情",
-          note: "备注",
-        }[type];
+        translate(env.locale, type);
       return type === "details"
         ? `<details><summary>${escape(title)}</summary>\n`
         : `<aside class="callout ${type}"><p class="callout-title">${escape(title)}</p>\n`;
@@ -80,9 +87,10 @@ for (const cell of ["th_open", "td_open"]) {
 }
 md.renderer.rules.fence = (tokens, index, options, env, self) => {
   const token = tokens[index];
+  const locale: Locale = env?.locale === "zh" ? "zh" : "en";
   const language = token.info.trim().split(/\s+/)[0].toLowerCase();
   if (language === "mermaid") {
-    return `<figure class="diagram"><div class="diagram-caption"><span>MERMAID</span><button type="button" class="diagram-expand" aria-label="放大图表">放大 ↗</button></div><div class="mermaid-source">${escape(token.content)}</div></figure>`;
+    return `<figure class="diagram"><div class="diagram-caption"><span>MERMAID</span><button type="button" class="diagram-expand" aria-label="${translate(locale, "largerDiagram")}">${translate(locale, "expand")} ↗</button></div><div class="mermaid-source">${escape(token.content)}</div></figure>`;
   }
   if (language === "math" || language === "latex")
     return mathMarkup(token.content, true);
@@ -163,7 +171,10 @@ md.block.ruler.before(
 md.renderer.rules.math_block = (tokens, index) =>
   mathMarkup(tokens[index].content, true);
 
-export function renderMarkdown(source: string): RenderedDocument {
+export function renderMarkdown(
+  source: string,
+  locale: Locale = "en",
+): RenderedDocument {
   let body = source.replace(/^\uFEFF/, "");
   const warnings: string[] = [];
   let metadata: Record<string, unknown> = {};
@@ -175,18 +186,16 @@ export function renderMarkdown(source: string): RenderedDocument {
         metadata = parsed as Record<string, unknown>;
       body = body.slice(frontmatter[0].length);
     } catch {
-      warnings.push("YAML 文档信息格式有误，已保留原文。");
+      warnings.push(translate(locale, "yamlError"));
     }
   }
   if (
     /^\s*(?:import\s.+from\s|export\s(?:const|default)|<script\b)/m.test(body)
   )
-    warnings.push(
-      "此文档包含组件或脚本。仅预览静态 Markdown，不运行项目代码。",
-    );
+    warnings.push(translate(locale, "scriptsWarning"));
   if (/!\[\[|\[\[[^\]]+\]\]/.test(body))
-    warnings.push("Obsidian 双向链接与笔记嵌入尚未解析，已保留原文。");
-  const env = {};
+    warnings.push(translate(locale, "obsidianWarning"));
+  const env = { locale };
   const tokens = md.parse(body, env);
   const headings: Heading[] = [];
   const duplicates = new Map<string, number>();

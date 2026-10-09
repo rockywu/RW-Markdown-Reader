@@ -9,25 +9,28 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
+import { translate, type Locale } from "./i18n";
+
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export const isMarkdown = (file: string) => /\.(md|markdown)$/i.test(file);
 const digest = (bytes: Buffer) =>
   createHash("sha256").update(bytes).digest("hex");
 
-export async function readDocument(file: string) {
-  if (!isMarkdown(file)) throw new Error("请选择 .md 或 .markdown 文档。");
+export async function readDocument(file: string, locale: Locale = "en") {
+  if (!isMarkdown(file)) throw new Error(translate(locale, "chooseMarkdown"));
   const canonical = await realpath(file);
   const info = await stat(canonical);
-  if (!info.isFile()) throw new Error("所选路径不是文件。");
+  if (!info.isFile()) throw new Error(translate(locale, "notFile"));
   if (info.size > MAX_DOCUMENT_BYTES)
-    throw new Error("文档超过 10 MB，请先拆分后再打开。");
+    throw new Error(translate(locale, "largeDocument"));
   const bytes = await readFile(canonical);
-  if (bytes.length > MAX_DOCUMENT_BYTES) throw new Error("文档超过 10 MB。");
+  if (bytes.length > MAX_DOCUMENT_BYTES)
+    throw new Error(translate(locale, "largeDocument"));
   let content: string;
   try {
     content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    throw new Error("文档不是 UTF-8 编码，请先转换为 UTF-8。");
+    throw new Error(translate(locale, "invalidEncoding"));
   }
   return {
     path: canonical,
@@ -54,20 +57,19 @@ export async function saveDocument(
   content: string,
   expectedVersion: string | null,
   format: { lineEnding: "\n" | "\r\n"; bom: boolean },
+  locale: Locale = "en",
 ) {
   if (!isMarkdown(file))
-    throw new Error("请使用 .md 或 .markdown 文件扩展名。");
+    throw new Error(translate(locale, "markdownExtension"));
   const bytes = Buffer.from(
     (format.bom ? "\uFEFF" : "") +
       content.replace(/\r\n/g, "\n").replace(/\n/g, format.lineEnding),
   );
   if (bytes.length > MAX_DOCUMENT_BYTES)
-    throw new Error("文档超过 10 MB，未保存。");
+    throw new Error(translate(locale, "largeSave"));
   const checkVersion = async () => {
     if ((await diskVersion(file)) !== expectedVersion)
-      throw new Error(
-        "文件已在外部修改或删除，未覆盖。请另存为，或重新加载磁盘版本。",
-      );
+      throw new Error(translate(locale, "saveConflict"));
   };
   await checkVersion();
   const mode = expectedVersion === null ? 0o600 : (await stat(file)).mode;
@@ -90,25 +92,29 @@ export async function saveDocument(
       if (error.code !== "ENOENT") throw error;
     });
   }
-  return readDocument(file);
+  return readDocument(file, locale);
 }
 
-export async function resolveWithin(directory: string, relative: string) {
+export async function resolveWithin(
+  directory: string,
+  relative: string,
+  locale: Locale = "en",
+) {
   const root = await realpath(directory);
   const resolved = path.resolve(root, relative);
-  assertWithin(root, resolved);
+  assertWithin(root, resolved, locale);
   const candidate = await realpath(resolved);
-  assertWithin(root, candidate);
+  assertWithin(root, candidate, locale);
   return candidate;
 }
 
-function assertWithin(root: string, candidate: string) {
+function assertWithin(root: string, candidate: string, locale: Locale) {
   const relation = path.relative(root, candidate);
   if (
     relation === ".." ||
     relation.startsWith(`..${path.sep}`) ||
     path.isAbsolute(relation)
   ) {
-    throw new Error("此链接超出当前文档目录，请使用“打开文档”选择该文件。");
+    throw new Error(translate(locale, "outsideDirectory"));
   }
 }

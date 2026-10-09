@@ -45,7 +45,8 @@ body {
   color: var(--text);
 }
 button,
-input {
+input,
+select {
   font: inherit;
 }
 button {
@@ -59,6 +60,7 @@ button:disabled {
   cursor: default;
 }
 button:focus-visible,
+select:focus-visible,
 a:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--accent);
@@ -77,12 +79,13 @@ a {
   background: var(--canvas);
 }
 .toolbar {
-  height: 76px;
+  height: auto;
   min-height: 76px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  padding: 0 28px;
+  gap: 12px;
+  padding: 16px 28px;
   border-bottom: 1px solid var(--border);
   background: var(--paper);
   user-select: none;
@@ -918,9 +921,8 @@ a {
 .editor-pane {
   display: flex;
   flex-direction: column;
-  width: 45%;
-  min-width: 260px;
-  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  min-width: 0;
   background: var(--paper);
 }
 .pane-label {
@@ -939,6 +941,69 @@ a {
 .pane-label small {
   font-size: 10px;
   letter-spacing: 0;
+  white-space: nowrap;
+}
+.editor-pane .pane-label {
+  flex-wrap: wrap;
+  height: auto;
+  padding: 10px 14px;
+}
+.pane-action {
+  margin-left: auto;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.pane-divider {
+  flex: 0 0 8px;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  background: var(--canvas);
+}
+.pane-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: var(--border);
+}
+.pane-divider:hover::after,
+.pane-divider:focus-visible::after,
+.resizing .pane-divider::after {
+  background: var(--accent);
+}
+.pane-divider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.resizing .source-editor,
+.resizing .preview-pane {
+  pointer-events: none;
+}
+.language-select {
+  flex-shrink: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--paper);
+  font-size: 12px;
+}
+:root[lang="en"] .brand strong {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+.open-button {
+  white-space: nowrap;
+}
+.icon-button {
+  flex-shrink: 0;
 }
 .source-editor {
   flex: 1;
@@ -995,6 +1060,9 @@ a {
   .toolbar {
     gap: 8px;
     padding: 0 16px;
+    flex-wrap: wrap;
+    height: auto;
+    padding-block: 10px;
   }
   .brand {
     min-width: 104px;

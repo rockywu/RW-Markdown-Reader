@@ -10,6 +10,8 @@ function listen(channel: string, callback: (...args: any[]) => void) {
 
 const api: ReaderAPI = {
   platform: process.platform,
+  getLocale: () => ipcRenderer.invoke("reader:get-locale"),
+  setLocale: (locale) => ipcRenderer.invoke("reader:set-locale", locale),
   open: () => ipcRenderer.invoke("reader:open"),
   current: () => ipcRenderer.invoke("reader:current"),
   openDropped: (file) =>

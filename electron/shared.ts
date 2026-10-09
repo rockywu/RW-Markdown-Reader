@@ -1,3 +1,5 @@
+import type { Locale } from "./i18n";
+
 export interface DocumentData {
   path: string;
   name: string;
@@ -11,6 +13,8 @@ export interface DocumentData {
 
 export interface ReaderAPI {
   platform: string;
+  getLocale: () => Promise<Locale>;
+  setLocale: (locale: Locale) => Promise<Locale>;
   open: () => Promise<DocumentData | null>;
   current: () => Promise<DocumentData | null>;
   openDropped: (file: File) => Promise<DocumentData | null>;

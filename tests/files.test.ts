@@ -20,7 +20,7 @@ describe("local file boundary", () => {
       await writeFile(file, "# 中文");
       expect((await readDocument(file)).content).toBe("# 中文");
       await expect(readDocument(path.join(root, "secret.txt"))).rejects.toThrow(
-        "请选择",
+        "Select a",
       );
       await writeFile(file, Buffer.from([0xff, 0xfe, 0xfd]));
       await expect(readDocument(file)).rejects.toThrow("UTF-8");
@@ -39,17 +39,19 @@ describe("local file boundary", () => {
         await resolveWithin(folder, "./safe.md"),
       );
       await expect(resolveWithin(folder, "../secret.md")).rejects.toThrow(
-        "超出",
+        "outside",
       );
       await expect(
         resolveWithin(folder, "../does-not-exist.md"),
-      ).rejects.toThrow("超出");
+      ).rejects.toThrow("outside");
       if (process.platform !== "win32") {
         await symlink(
           path.join(root, "secret.md"),
           path.join(folder, "link.md"),
         );
-        await expect(resolveWithin(folder, "link.md")).rejects.toThrow("超出");
+        await expect(resolveWithin(folder, "link.md")).rejects.toThrow(
+          "outside",
+        );
       }
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -87,12 +89,12 @@ describe("safe document saves", () => {
       await writeFile(file, "# External");
       await expect(
         saveDocument(file, "# My draft", doc.version, doc),
-      ).rejects.toThrow("外部修改");
+      ).rejects.toThrow("changed");
       expect(await readFile(file, "utf8")).toBe("# External");
       await rm(file);
       await expect(
         saveDocument(file, "# My draft", doc.version, doc),
-      ).rejects.toThrow("删除");
+      ).rejects.toThrow("deleted");
       expect(await readdir(root)).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -106,7 +108,7 @@ describe("safe document saves", () => {
       await saveDocument(file, "# New", null, format);
       await expect(
         saveDocument(file, "# overwrite", null, format),
-      ).rejects.toThrow("未覆盖");
+      ).rejects.toThrow("not overwritten");
       expect(await readFile(file, "utf8")).toBe("# New");
     } finally {
       await rm(root, { recursive: true, force: true });

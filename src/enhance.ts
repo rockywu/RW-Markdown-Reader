@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+import { translate, type Locale } from "../electron/i18n";
 
 let counter = 0;
 let queue = Promise.resolve();
@@ -8,6 +9,7 @@ export function enhanceDocument(
   root: HTMLElement,
   dark: boolean,
   isCurrent: () => boolean,
+  locale: Locale = "en",
 ) {
   const work = async () => {
     if (!isCurrent()) return;
@@ -29,7 +31,7 @@ export function enhanceDocument(
           );
         } catch {
           formula.classList.add("render-error");
-          formula.title = "公式解析失败，已保留源码";
+          formula.title = translate(locale, "mathError");
         }
       }
     }
@@ -102,10 +104,10 @@ export function enhanceDocument(
         diagram.replaceChildren();
         const message = document.createElement("p");
         message.className = "render-error";
-        message.textContent = "图表暂时无法渲染，原文已保留。";
+        message.textContent = translate(locale, "diagramError");
         const details = document.createElement("details");
         const summary = document.createElement("summary");
-        summary.textContent = "查看错误和源码";
+        summary.textContent = translate(locale, "errorDetails");
         const pre = document.createElement("pre");
         pre.textContent = `${String(error).slice(0, 1500)}\n\n${source}`;
         details.append(summary, pre);

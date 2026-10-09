@@ -10,7 +10,7 @@ import {
   shell,
 } from "electron";
 import { watch, type FSWatcher } from "node:fs";
-import { stat } from "node:fs/promises";
+import { stat, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -23,6 +23,30 @@ import {
   MAX_DOCUMENT_BYTES,
 } from "./files";
 import type { DocumentData } from "./shared";
+import {
+  systemLocale,
+  translate,
+  type Locale,
+  type MessageKey,
+  type MessageParams,
+} from "./i18n";
+
+let locale: Locale = "en";
+const t = (key: MessageKey, params?: MessageParams) =>
+  translate(locale, key, params);
+const languageFile = () => path.join(app.getPath("userData"), "language.json");
+
+async function loadLocale() {
+  locale = systemLocale(
+    app.getPreferredSystemLanguages()[0] || app.getLocale(),
+  );
+  try {
+    const saved = JSON.parse(await readFile(languageFile(), "utf8"));
+    if (saved.locale === "zh" || saved.locale === "en") locale = saved.locale;
+  } catch {
+    // A missing or damaged preference falls back to the system language.
+  }
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -57,7 +81,7 @@ function report(error: unknown) {
 }
 function updateTitle() {
   window?.setTitle(
-    `${dirty() ? "● " : ""}${current?.name ?? "墨阅"} — Markview`,
+    `${dirty() ? "● " : ""}${current ? (current.path ? current.name : t("untitledFile")) : t("brand")} — Markview`,
   );
   window?.setDocumentEdited(dirty());
 }
@@ -103,7 +127,7 @@ async function refreshFromDisk(file: string) {
     return;
   }
   const baseline = current;
-  const loaded = await readDocument(file);
+  const loaded = await readDocument(file, locale);
   if (current !== baseline || operation || loaded.version === current.version)
     return;
   if (dirty() || editing) {
@@ -117,8 +141,9 @@ async function saveCurrent(saveAs = false): Promise<DocumentData | null> {
   let target = current.path;
   if (saveAs || !target) {
     const result = await dialog.showSaveDialog(window, {
-      title: "保存 Markdown 文档",
-      defaultPath: target || "未命名.md",
+      title: t("saveDialog"),
+      buttonLabel: t("save"),
+      defaultPath: target || t("untitledFile"),
       filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
     });
     if (result.canceled || !result.filePath) return null;
@@ -130,16 +155,16 @@ async function saveCurrent(saveAs = false): Promise<DocumentData | null> {
   if (!sameFile && expected !== null) {
     const result = await dialog.showMessageBox(window, {
       type: "warning",
-      message: `替换“${path.basename(target)}”？`,
-      detail: "目标文件已存在，替换后将写入当前编辑内容。",
-      buttons: ["取消", "替换"],
+      message: t("replaceQuestion", { name: path.basename(target) }),
+      detail: t("replaceDetail"),
+      buttons: [t("cancel"), t("replace")],
       defaultId: 0,
       cancelId: 0,
       noLink: true,
     });
     if (result.response !== 1) return null;
   }
-  const loaded = await saveDocument(target, draft, expected, current);
+  const loaded = await saveDocument(target, draft, expected, current, locale);
   const doc = {
     ...loaded,
     assetBase: sameFile
@@ -153,9 +178,11 @@ async function confirmTransition(): Promise<boolean> {
   if (!dirty() || !window) return true;
   const { response } = await dialog.showMessageBox(window, {
     type: "warning",
-    message: `保存对“${current!.name}”的修改？`,
-    detail: "未保存的修改会丢失。",
-    buttons: ["保存", "不保存", "取消"],
+    message: t("saveQuestion", {
+      name: current!.path ? current!.name : t("untitledFile"),
+    }),
+    detail: t("discardDetail"),
+    buttons: [t("save"), t("dontSave"), t("cancel")],
     defaultId: 0,
     cancelId: 2,
     noLink: true,
@@ -166,9 +193,9 @@ async function confirmTransition(): Promise<boolean> {
 }
 async function openDocument(file: string): Promise<DocumentData | null> {
   // Validate before asking to discard a draft; an invalid file leaves it intact.
-  await readDocument(file);
+  await readDocument(file, locale);
   if (!(await confirmTransition())) return null;
-  const loaded = await readDocument(file);
+  const loaded = await readDocument(file, locale);
   const doc = { ...loaded, assetBase: `markview-asset://${randomUUID()}/` };
   beginWatching(doc.path);
   return publish(doc);
@@ -176,7 +203,8 @@ async function openDocument(file: string): Promise<DocumentData | null> {
 async function chooseFile() {
   if (!window) return null;
   const result = await dialog.showOpenDialog(window, {
-    title: "打开 Markdown 文档",
+    title: t("openDialog"),
+    buttonLabel: t("open"),
     properties: ["openFile"],
     filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
   });
@@ -187,7 +215,7 @@ async function newDocument(content = "") {
   beginWatching("");
   const doc: DocumentData = {
     path: "",
-    name: "未命名.md",
+    name: t("untitledFile"),
     content: "",
     assetBase: `markview-asset://${randomUUID()}/`,
     version: null,
@@ -207,32 +235,49 @@ const run = (action: () => Promise<unknown>) => {
 };
 function createMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    ...(process.platform === "darwin"
+      ? [
+          {
+            label: "Markview",
+            submenu: [
+              { role: "about" as const, label: t("about") },
+              { type: "separator" as const },
+              { role: "services" as const, label: t("services") },
+              { type: "separator" as const },
+              { role: "hide" as const, label: t("hideApp") },
+              { role: "hideOthers" as const, label: t("hideOthers") },
+              { role: "unhide" as const, label: t("showAll") },
+              { type: "separator" as const },
+              { role: "quit" as const, label: t("quit") },
+            ],
+          },
+        ]
+      : []),
     {
-      label: "文件",
+      label: t("fileMenu"),
       submenu: [
         {
-          label: "新建文档",
+          label: t("newDocument"),
           accelerator: "CmdOrCtrl+N",
           click: () => run(() => newDocument()),
         },
         {
-          label: "打开文档…",
+          label: `${t("open")}…`,
           accelerator: "CmdOrCtrl+O",
           click: () => run(chooseFile),
         },
         {
-          label: "保存",
+          label: t("save"),
           accelerator: "CmdOrCtrl+S",
           click: () => run(() => saveCurrent()),
         },
         {
-          label: "另存为…",
+          label: `${t("saveAs")}…`,
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => run(() => saveCurrent(true)),
         },
         {
-          label: "重新加载",
+          label: t("reload"),
           accelerator: "CmdOrCtrl+R",
           click: () =>
             run(() =>
@@ -242,42 +287,47 @@ function createMenu() {
             ),
         },
         { type: "separator" },
-        { role: process.platform === "darwin" ? "close" : "quit" },
+        {
+          role: process.platform === "darwin" ? "close" : "quit",
+          label: t(process.platform === "darwin" ? "closeWindow" : "quit"),
+        },
       ],
     },
     {
-      label: "编辑",
+      label: t("edit"),
       submenu: [
-        { role: "undo" },
-        { role: "redo" },
+        { role: "undo", label: t("undo") },
+        { role: "redo", label: t("redo") },
         { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
+        { role: "cut", label: t("cut") },
+        { role: "copy", label: t("copy") },
+        { role: "paste", label: t("paste") },
+        { role: "selectAll", label: t("selectAll") },
         { type: "separator" },
         {
-          label: "查找预览内容",
+          label: t("findPreview"),
           accelerator: "CmdOrCtrl+F",
           click: () => window?.webContents.send("reader:menu", "find"),
         },
       ],
     },
     {
-      label: "视图",
+      label: t("viewMenu"),
       submenu: [
         {
-          label: "编辑 / 阅读",
+          label: t("toggleEdit"),
           accelerator: "CmdOrCtrl+E",
           click: () => window?.webContents.send("reader:menu", "toggle-edit"),
         },
         {
-          label: "显示 / 隐藏目录",
+          label: t("toggleOutline"),
           accelerator: "CmdOrCtrl+Shift+L",
           click: () => window?.webContents.send("reader:menu", "outline"),
         },
-        { role: "togglefullscreen" },
-        ...(devURL ? [{ role: "toggleDevTools" as const }] : []),
+        { role: "togglefullscreen", label: t("fullscreen") },
+        ...(devURL
+          ? [{ role: "toggleDevTools" as const, label: t("devTools") }]
+          : []),
       ],
     },
   ];
@@ -290,7 +340,7 @@ function createWindow() {
     height: 880,
     minWidth: 820,
     minHeight: 560,
-    title: "墨阅 · Markview",
+    title: t("appTitle"),
     backgroundColor: "#f4f3ef",
     icon,
     show: false,
@@ -341,7 +391,7 @@ function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) {
 function registerIPC() {
   const handle = (channel: string, callback: (...args: any[]) => unknown) => {
     ipcMain.handle(channel, (event, ...args) => {
-      if (!trusted(event)) throw new Error("不允许的调用来源。");
+      if (!trusted(event)) throw new Error(t("untrusted"));
       return callback(...args);
     });
   };
@@ -363,12 +413,23 @@ function registerIPC() {
   );
   handle("reader:open", () => exclusive(chooseFile));
   handle("reader:current", () => current);
+  handle("reader:get-locale", () => locale);
+  handle("reader:set-locale", async (value: unknown) => {
+    if (value !== "zh" && value !== "en") throw new Error(t("invalidLocale"));
+    const temporary = `${languageFile()}.tmp`;
+    await writeFile(temporary, JSON.stringify({ locale: value }), "utf8");
+    await rename(temporary, languageFile());
+    locale = value;
+    createMenu();
+    updateTitle();
+    return locale;
+  });
   handle("reader:new", (content: unknown) => {
     if (
       typeof content !== "string" ||
       Buffer.byteLength(content) > MAX_DOCUMENT_BYTES
     )
-      throw new Error("文档内容无效。");
+      throw new Error(t("invalidContent"));
     return exclusive(() => newDocument(content));
   });
   handle("reader:save", (saveAs: unknown) =>
@@ -376,7 +437,7 @@ function registerIPC() {
   );
   handle("reader:drop", (file: unknown) => {
     if (typeof file !== "string" || !path.isAbsolute(file))
-      throw new Error("请从文件管理器拖入文档。");
+      throw new Error(t("invalidDrop"));
     return exclusive(() => openDocument(file));
   });
   handle("reader:reload", () =>
@@ -386,7 +447,7 @@ function registerIPC() {
   );
   handle("reader:link", async (href: unknown) => {
     if (typeof href !== "string" || href.length > 8192)
-      throw new Error("无效链接。");
+      throw new Error(t("invalidLink"));
     if (/^https?:\/\//i.test(href)) {
       await shell.openExternal(new URL(href).href);
       return;
@@ -397,10 +458,11 @@ function registerIPC() {
       href.startsWith("//") ||
       href.startsWith("\\")
     )
-      throw new Error("请先保存文档，或使用“打开文档”选择文件。");
+      throw new Error(t("saveBeforeLink"));
     const file = await resolveWithin(
       path.dirname(current.path),
       decodeURIComponent(href.split(/[?#]/)[0]),
+      locale,
     );
     await exclusive(() => openDocument(file));
   });
@@ -433,6 +495,7 @@ else {
     window?.focus();
   });
   app.whenReady().then(async () => {
+    await loadLocale();
     app.setAppUserModelId("dev.markview.reader");
     if (process.platform === "darwin") app.dock?.setIcon(icon);
     session.defaultSession.setPermissionRequestHandler(
@@ -447,6 +510,7 @@ else {
         const file = await resolveWithin(
           path.dirname(current.path),
           decodeURIComponent(url.pathname.slice(1)),
+          locale,
         );
         if (
           !/\.(png|jpe?g|gif|webp|svg|avif|ico)$/i.test(file) ||
@@ -475,7 +539,7 @@ else {
         await openDocument(pendingFile);
       } catch (error) {
         dialog.showErrorBox(
-          "无法打开文档",
+          t("cannotOpen"),
           error instanceof Error ? error.message : String(error),
         );
       }

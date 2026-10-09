@@ -4,16 +4,38 @@ import { renderMarkdown } from "./markdown";
 import { sanitizeMarkdown } from "./sanitize";
 import { enhanceDocument } from "./enhance";
 import type { DocumentData } from "../electron/shared";
-import welcome from "../examples/welcome.md?raw";
+import welcomeZh from "../examples/welcome.md?raw";
+import welcomeEn from "../examples/welcome.en.md?raw";
+import {
+  translate,
+  type Locale,
+  type MessageKey,
+  type MessageParams,
+} from "../electron/i18n";
 import appIcon from "../build/icon.svg";
 
+const props = defineProps<{ initialLocale: Locale }>();
+const locale = ref(props.initialLocale);
+const changingLocale = ref(false);
+const t = (key: MessageKey, params?: MessageParams) =>
+  translate(locale.value, key, params);
+const welcome = computed(() => (locale.value === "zh" ? welcomeZh : welcomeEn));
 const doc = ref<DocumentData | null>(null);
 const draft = ref("");
 const editing = ref(false);
 const saving = ref(false);
 const externalChange = ref(false);
 const sourceEditor = ref<HTMLTextAreaElement>();
-const previewSource = ref(welcome);
+const previewSource = ref(welcome.value);
+const previewVisible = ref(
+  localStorage.getItem("markview-preview") !== "hidden",
+);
+const contentPanes = ref<HTMLElement>();
+const storedRatio = Number(localStorage.getItem("markview-editor-width") ?? 45);
+const editorRatio = ref(
+  Number.isFinite(storedRatio) ? Math.max(20, Math.min(80, storedRatio)) : 45,
+);
+const resizing = ref(false);
 const dirty = computed(() => !!doc.value && draft.value !== doc.value.content);
 const lines = computed(() => draft.value.split("\n").length);
 const platform = window.reader.platform;
@@ -32,17 +54,28 @@ const matches = ref({ matches: 0, activeMatchOrdinal: 0 });
 const zoomDialog = ref<HTMLDialogElement>();
 const diagramZoom = ref(1);
 const enlargedDiagram = ref("");
-const rendered = computed(() => renderMarkdown(previewSource.value));
-const title = computed(() => doc.value?.name ?? "欢迎使用墨阅");
+const rendered = computed(() =>
+  renderMarkdown(previewSource.value, locale.value),
+);
+const title = computed(() =>
+  doc.value
+    ? doc.value.path
+      ? doc.value.name
+      : t("untitledFile")
+    : t("welcome"),
+);
 const isDark = computed(() => theme.value === "dark");
 const modified = computed(() =>
   doc.value
-    ? new Date(doc.value.modifiedAt).toLocaleTimeString("zh-CN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      })
-    : "离线阅读，专注内容",
+    ? new Date(doc.value.modifiedAt).toLocaleTimeString(
+        locale.value === "zh" ? "zh-CN" : "en-US",
+        {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        },
+      )
+    : t("offline"),
 );
 let revision = 0;
 let pendingAnchor: string | null = null;
@@ -50,6 +83,70 @@ let searchTimer: ReturnType<typeof setTimeout>;
 let previewTimer: ReturnType<typeof setTimeout>;
 const unsubscribers: (() => void)[] = [];
 
+async function changeLocale(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  changingLocale.value = true;
+  try {
+    locale.value = await window.reader.setLocale(select.value as Locale);
+    if (!doc.value) previewSource.value = welcome.value;
+  } catch (value) {
+    select.value = locale.value;
+    showError(value);
+  } finally {
+    changingLocale.value = false;
+  }
+}
+watch(
+  locale,
+  (value) => {
+    document.documentElement.lang = value === "zh" ? "zh-CN" : "en";
+  },
+  { immediate: true },
+);
+watch(previewVisible, (visible) => {
+  localStorage.setItem("markview-preview", visible ? "visible" : "hidden");
+});
+function saveRatio() {
+  localStorage.setItem("markview-editor-width", String(editorRatio.value));
+}
+function resizePanes(event: PointerEvent) {
+  if (!resizing.value || !contentPanes.value) return;
+  const bounds = contentPanes.value.getBoundingClientRect();
+  editorRatio.value = Math.max(
+    20,
+    Math.min(
+      80,
+      ((event.clientX - bounds.left - 4) / (bounds.width - 8)) * 100,
+    ),
+  );
+}
+function startResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  const separator = event.currentTarget as HTMLElement;
+  separator.focus({ preventScroll: true });
+  separator.setPointerCapture(event.pointerId);
+  resizing.value = true;
+}
+function finishResize() {
+  resizing.value = false;
+  saveRatio();
+}
+function resizeKeyboard(event: KeyboardEvent) {
+  const values: Record<string, number> = {
+    ArrowLeft: editorRatio.value - 2,
+    ArrowRight: editorRatio.value + 2,
+    Home: 20,
+    End: 80,
+  };
+  if (!(event.key in values)) return;
+  event.preventDefault();
+  editorRatio.value = Math.max(20, Math.min(80, values[event.key]));
+  saveRatio();
+}
+function resetRatio() {
+  editorRatio.value = 45;
+  saveRatio();
+}
 function showError(value: unknown) {
   error.value =
     value instanceof Error
@@ -67,7 +164,7 @@ function metadataValue(value: unknown): string {
       )
       .join(", ");
   return value && typeof value === "object"
-    ? "嵌套文档信息"
+    ? t("nestedMetadata")
     : String(value ?? "");
 }
 async function opening() {
@@ -106,7 +203,7 @@ function inputDraft(event: Event) {
   const input = event.target as HTMLTextAreaElement;
   if (new TextEncoder().encode(input.value).length > 10 * 1024 * 1024) {
     input.value = draft.value;
-    error.value = "文档超过 10 MB，未接受这次输入。";
+    error.value = t("inputTooLarge");
     return;
   }
   draft.value = input.value;
@@ -136,7 +233,7 @@ async function newFile(initial = "") {
 async function toggleEditor() {
   if (saving.value) return;
   if (!doc.value) {
-    await newFile(welcome);
+    await newFile(welcome.value);
     return;
   }
   editing.value = !editing.value;
@@ -179,6 +276,7 @@ async function draw() {
       article.value,
       isDark.value,
       () => revision === currentRevision,
+      locale.value,
     );
     if (revision === currentRevision) {
       if (pendingAnchor) {
@@ -207,13 +305,16 @@ watch(query, () => {
     void window.reader.find(query.value).catch(showError);
   }, 150);
 });
-function jump(id: string) {
+async function jump(id: string) {
+  if (editing.value) previewVisible.value = true;
+  await nextTick();
   const element = Array.from(
     article.value?.querySelectorAll("[id]") ?? [],
   ).find((item) => item.id === id);
   element?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 async function openSearch() {
+  if (editing.value) previewVisible.value = true;
   searchOpen.value = true;
   await nextTick();
   searchInput.value?.focus();
@@ -328,12 +429,15 @@ onUnmounted(() => {
   >
     <header class="toolbar">
       <div class="brand">
-        <img class="brand-logo" :src="appIcon" alt="墨阅图标" />
-        <div><strong>墨阅</strong><small>MARKVIEW</small></div>
+        <img class="brand-logo" :src="appIcon" :alt="t('appIcon')" />
+        <div>
+          <strong>{{ t("brand") }}</strong
+          ><small>MARKVIEW</small>
+        </div>
       </div>
       <div class="toolbar-divider"></div>
       <button class="open-button" :disabled="saving" @click="opening">
-        <span aria-hidden="true">＋</span> 打开文档
+        <span aria-hidden="true">＋</span> {{ t("open") }}
         <kbd>{{ platform === "darwin" ? "⌘ O" : "Ctrl O" }}</kbd>
       </button>
       <button
@@ -341,23 +445,23 @@ onUnmounted(() => {
         :disabled="saving"
         @click="newFile()"
       >
-        新建
+        {{ t("new") }}
       </button>
       <span class="toolbar-spacer"></span>
-      <div class="mode-switch" aria-label="工作模式">
+      <div class="mode-switch" :aria-label="t('mode')">
         <button
           :aria-pressed="!editing"
           :disabled="saving"
           @click="editing && toggleEditor()"
         >
-          阅读
+          {{ t("read") }}
         </button>
         <button
           :aria-pressed="editing"
           :disabled="saving"
           @click="!editing && toggleEditor()"
         >
-          编辑与预览
+          {{ t("edit") }}
         </button>
       </div>
       <button
@@ -365,42 +469,42 @@ onUnmounted(() => {
         :disabled="saving || !doc"
         @click="saveFile()"
       >
-        保存<span v-if="dirty" class="dirty-dot"></span>
+        {{ t("save") }}<span v-if="dirty" class="dirty-dot"></span>
       </button>
       <button
         class="text-button save-as-button"
         :disabled="saving || !doc"
         @click="saveFile(true)"
       >
-        另存为
+        {{ t("saveAs") }}
       </button>
       <button
         class="icon-button"
         :aria-pressed="outline"
-        aria-label="显示或隐藏目录"
-        title="文档目录"
+        :aria-label="t('toggleOutline')"
+        :title="t('outline')"
         @click="outline = !outline"
       >
         ☷
       </button>
       <button
         class="icon-button"
-        aria-label="查找文档"
-        title="查找"
+        :aria-label="t('findDocument')"
+        :title="t('find')"
         @click="openSearch"
       >
         ⌕
       </button>
       <div class="font-control">
         <button
-          aria-label="缩小文字"
+          :aria-label="t('smallerText')"
           :disabled="fontSize <= 12"
           @click="fontSize--"
         >
           A−</button
         ><span>{{ fontSize }}</span
         ><button
-          aria-label="放大文字"
+          :aria-label="t('largerText')"
           :disabled="fontSize >= 24"
           @click="fontSize++"
         >
@@ -409,36 +513,50 @@ onUnmounted(() => {
       </div>
       <button
         class="icon-button theme-toggle"
-        :aria-label="isDark ? '切换浅色主题' : '切换深色主题'"
+        :aria-label="t(isDark ? 'lightTheme' : 'darkTheme')"
         @click="theme = isDark ? 'light' : 'dark'"
       >
         {{ isDark ? "☀" : "☾" }}
       </button>
+      <select
+        class="language-select"
+        aria-label="界面语言 / Interface language"
+        :value="locale"
+        :disabled="changingLocale"
+        @change="changeLocale"
+      >
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+      </select>
     </header>
 
     <div v-if="error" class="error-banner" role="alert">
       <span>{{ error }}</span
-      ><button aria-label="关闭错误提示" @click="error = ''">×</button>
+      ><button :aria-label="t('closeError')" @click="error = ''">×</button>
     </div>
     <div v-if="externalChange" class="conflict-banner" role="status">
-      <span>文件已在外部修改。当前编辑内容已保留。</span
-      ><button :disabled="saving" @click="saveFile(true)">另存为副本</button
-      ><button :disabled="saving" @click="reloadFile">重新加载磁盘版本</button>
+      <span>{{ t("externalChange") }}</span
+      ><button :disabled="saving" @click="saveFile(true)">
+        {{ t("saveCopy") }}</button
+      ><button :disabled="saving" @click="reloadFile">
+        {{ t("reloadDisk") }}
+      </button>
     </div>
     <div class="workspace">
       <aside v-if="outline" class="sidebar">
-        <div class="sidebar-label">正在阅读</div>
+        <div class="sidebar-label">{{ t("reading") }}</div>
         <div class="document-card">
           <span class="file-symbol">M↓</span>
           <div>
             <strong :title="title">{{ title }}</strong
-            ><small>{{ doc ? "本地 Markdown 文档" : "开始你的阅读" }}</small>
+            ><small>{{ t(doc ? "localDocument" : "startReading") }}</small>
           </div>
         </div>
         <div class="outline-title">
-          <span>文档目录</span><small>{{ rendered.headings.length }}</small>
+          <span>{{ t("outline") }}</span
+          ><small>{{ rendered.headings.length }}</small>
         </div>
-        <nav aria-label="文档目录">
+        <nav :aria-label="t('outline')">
           <button
             v-for="heading in rendered.headings"
             :key="heading.id"
@@ -451,20 +569,20 @@ onUnmounted(() => {
             {{ heading.text }}
           </button>
           <p v-if="!rendered.headings.length" class="empty-outline">
-            这篇文档没有标题
+            {{ t("noHeadings") }}
           </p>
         </nav>
         <div class="sidebar-bottom">
-          <span class="status-dot"></span> 本地渲染 · 无需登录
+          <span class="status-dot"></span> {{ t("localRendering") }}
         </div>
       </aside>
 
       <main class="main-pane">
         <div class="document-bar">
           <div class="breadcrumb">
-            <span>文档</span><span class="slash">/</span
-            ><strong>{{ title }}</strong
-            ><span v-if="dirty" class="unsaved-label">未保存</span>
+            <span>{{ t("document") }}</span
+            ><span class="slash">/</span><strong>{{ title }}</strong
+            ><span v-if="dirty" class="unsaved-label">{{ t("unsaved") }}</span>
           </div>
           <span class="format-badge">MARKDOWN</span>
         </div>
@@ -472,27 +590,45 @@ onUnmounted(() => {
           <input
             ref="searchInput"
             v-model="query"
-            aria-label="搜索内容"
-            placeholder="在文档中查找…"
+            :aria-label="t('searchContent')"
+            :placeholder="t('searchPlaceholder')"
             maxlength="500"
             @keydown.enter="nextMatch(!$event.shiftKey)"
           /><span>{{ matches.activeMatchOrdinal }} / {{ matches.matches }}</span
-          ><button aria-label="上一个匹配" @click="nextMatch(false)">↑</button
-          ><button aria-label="下一个匹配" @click="nextMatch(true)">↓</button
-          ><button aria-label="关闭查找" @click="closeSearch">×</button>
+          ><button :aria-label="t('previousMatch')" @click="nextMatch(false)">
+            ↑</button
+          ><button :aria-label="t('nextMatch')" @click="nextMatch(true)">
+            ↓</button
+          ><button :aria-label="t('closeSearch')" @click="closeSearch">
+            ×
+          </button>
         </div>
-        <div class="content-panes">
+        <div ref="contentPanes" class="content-panes" :class="{ resizing }">
           <section
             v-show="editing"
+            id="markdown-editor-pane"
             class="editor-pane"
-            aria-label="Markdown 编辑区"
+            :style="{
+              width: previewVisible
+                ? `calc((100% - 8px) * ${editorRatio / 100})`
+                : '100%',
+            }"
+            :aria-label="t('editorRegion')"
           >
             <div class="pane-label">
-              <span>MARKDOWN 源码</span
+              <span>{{ t("source") }}</span
               ><small
-                >{{ lines }} 行 ·
-                {{ dirty || !doc?.path ? "未保存" : "已保存" }}</small
+                >{{ t("lineCount", { count: lines }) }} ·
+                {{ t(dirty || !doc?.path ? "unsaved" : "saved") }}</small
               >
+              <button
+                class="pane-action"
+                :aria-expanded="previewVisible"
+                aria-controls="markdown-preview-pane"
+                @click="previewVisible = !previewVisible"
+              >
+                {{ t(previewVisible ? "hidePreview" : "showPreview") }}
+              </button>
             </div>
             <textarea
               ref="sourceEditor"
@@ -500,35 +636,60 @@ onUnmounted(() => {
               :value="draft"
               :readonly="saving"
               :style="{ fontSize: `${fontSize - 2}px` }"
-              aria-label="Markdown 源码"
-              placeholder="从一个标题开始，写下你的想法…"
+              :aria-label="t('source')"
+              :placeholder="t('editorPlaceholder')"
               spellcheck="false"
               autocapitalize="off"
               autocomplete="off"
               @input="inputDraft"
             ></textarea>
           </section>
-          <section class="preview-pane" aria-label="文档预览">
+          <div
+            v-if="editing && previewVisible"
+            class="pane-divider"
+            role="separator"
+            tabindex="0"
+            aria-orientation="vertical"
+            aria-controls="markdown-editor-pane"
+            :aria-label="t('resizePanes')"
+            :title="t('resizeHint')"
+            :aria-valuenow="Math.round(editorRatio)"
+            :aria-valuemin="20"
+            :aria-valuemax="80"
+            @pointerdown.prevent="startResize"
+            @pointermove="resizePanes"
+            @pointerup="finishResize"
+            @pointercancel="finishResize"
+            @lostpointercapture="finishResize"
+            @keydown="resizeKeyboard"
+            @dblclick="resetRatio"
+          ></div>
+          <section
+            v-show="!editing || previewVisible"
+            id="markdown-preview-pane"
+            class="preview-pane"
+            :aria-label="t('preview')"
+          >
             <div v-if="editing" class="pane-label">
-              <span>实时预览</span
-              ><small>{{ busy ? "正在渲染…" : "随输入更新" }}</small>
+              <span>{{ t("livePreview") }}</span
+              ><small>{{ t(busy ? "rendering" : "updatesAsYouType") }}</small>
             </div>
             <div ref="scroller" class="reading-scroll">
               <div class="reading-page">
                 <div class="reading-eyebrow">
-                  {{
-                    doc
-                      ? "YOUR DOCUMENT, BEAUTIFULLY READ."
-                      : "A QUIET SPACE FOR YOUR IDEAS."
-                  }}
+                  {{ t(doc ? "documentCaption" : "welcomeCaption") }}
                 </div>
                 <details
                   v-if="Object.keys(rendered.metadata).length"
                   class="metadata"
                 >
                   <summary>
-                    文档信息
-                    <span>{{ Object.keys(rendered.metadata).length }} 项</span>
+                    {{ t("metadata") }}
+                    <span>{{
+                      t("itemCount", {
+                        count: Object.keys(rendered.metadata).length,
+                      })
+                    }}</span>
                   </summary>
                   <dl>
                     <template
@@ -553,7 +714,8 @@ onUnmounted(() => {
                   @click="articleClick"
                 ></article>
                 <div class="document-end">
-                  <span></span><small>阅读至此</small><span></span>
+                  <span></span><small>{{ t("endDocument") }}</small
+                  ><span></span>
                 </div>
               </div>
             </div>
@@ -561,22 +723,19 @@ onUnmounted(() => {
         </div>
         <footer class="statusbar">
           <span :title="doc?.path">{{
-            doc?.path ||
-            (doc
-              ? "未命名文档 · 保存后可加载相对路径图片"
-              : "Markdown · Mermaid · 数学公式")
+            doc?.path || (doc ? t("untitledHint") : t("supportedContent"))
           }}</span
           ><span>{{
             saving
-              ? "正在处理文件…"
+              ? t("processingFile")
               : dirty
-                ? "有未保存的修改"
+                ? t("unsavedChanges")
                 : busy
-                  ? "正在渲染…"
+                  ? t("rendering")
                   : doc?.path
-                    ? `已保存 ${modified}`
+                    ? t("savedAt", { time: modified })
                     : doc
-                      ? "新文档尚未保存"
+                      ? t("newUnsaved")
                       : modified
           }}</span>
         </footer>
@@ -588,8 +747,8 @@ onUnmounted(() => {
       @dragleave.prevent="dragging = false"
     >
       <div>
-        <span>↓</span><strong>放下你的 Markdown 文档</strong>
-        <p>支持 .md 和 .markdown</p>
+        <span>↓</span><strong>{{ t("dropDocument") }}</strong>
+        <p>{{ t("dropFormats") }}</p>
       </div>
     </div>
     <dialog
@@ -598,20 +757,22 @@ onUnmounted(() => {
       @click="$event.target === zoomDialog && zoomDialog?.close()"
     >
       <div class="dialog-toolbar">
-        <strong>图表预览</strong>
+        <strong>{{ t("diagramPreview") }}</strong>
         <div>
           <button
-            aria-label="缩小图表"
+            :aria-label="t('smallerDiagram')"
             @click="diagramZoom = Math.max(0.5, diagramZoom - 0.25)"
           >
             −</button
           ><span>{{ Math.round(diagramZoom * 100) }}%</span
           ><button
-            aria-label="放大图表"
+            :aria-label="t('largerDiagram')"
             @click="diagramZoom = Math.min(4, diagramZoom + 0.25)"
           >
             ＋</button
-          ><button aria-label="关闭图表" @click="zoomDialog?.close()">×</button>
+          ><button :aria-label="t('closeDiagram')" @click="zoomDialog?.close()">
+            ×
+          </button>
         </div>
       </div>
       <div class="diagram-viewport">
