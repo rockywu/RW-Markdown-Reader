@@ -128,7 +128,7 @@ jobs:
             fi
           else
             gh release create "$RELEASE_TAG" --verify-tag --draft \
-              --title "Markview $RELEASE_TAG" --notes-file .github/RELEASE_NOTES.md
+              --title "Markview $RELEASE_TAG" --notes-file docs/RELEASE_NOTES.md
           fi
           gh release upload "$RELEASE_TAG" downloads/* --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest
