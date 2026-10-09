@@ -489,7 +489,7 @@ kbd {
 }
 .sidebar nav button.active,
 .sidebar nav button.active:not(:disabled):hover {
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--soft);
 }
 .sidebar nav button.active::before {

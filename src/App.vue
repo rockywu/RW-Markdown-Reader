@@ -471,11 +471,22 @@ async function articleClick(event: MouseEvent) {
   }
 }
 function zoomDiagram(factor: number) {
-  diagramZoom.value = Math.max(0.5, Math.min(4, diagramZoom.value * factor));
+  diagramZoom.value = Math.max(0.25, Math.min(4, diagramZoom.value * factor));
 }
 function fitDiagram() {
-  diagramZoom.value = 1;
-  diagramViewport.value?.scrollTo(0, 0);
+  const viewport = diagramViewport.value;
+  const svg = viewport?.querySelector("svg");
+  if (!viewport || !svg) return;
+  // The diagram width follows the zoom, so its aspect ratio gives the zoom that fits both axes.
+  const { width, height } = svg.getBoundingClientRect();
+  const style = getComputedStyle(viewport);
+  const room = (axis: "Left" | "Top", end: "Right" | "Bottom", size: number) =>
+    size - parseFloat(style[`padding${axis}`]) - parseFloat(style[`padding${end}`]);
+  const fitWidth = room("Left", "Right", viewport.clientWidth);
+  const fitHeight = room("Top", "Bottom", viewport.clientHeight);
+  const zoom = width && height ? (fitHeight * width) / (height * fitWidth) : 1;
+  diagramZoom.value = Math.max(0.25, Math.min(1, zoom));
+  viewport.scrollTo(0, 0);
 }
 function wheelDiagram(event: WheelEvent) {
   // Trackpad pinch arrives as a wheel event with ctrlKey set.
@@ -522,8 +533,12 @@ function editorKeydown(event: KeyboardEvent) {
     document.execCommand("insertText", false, indent);
     return;
   }
+  // Work on whole lines; a selection ending at a line start leaves that line alone.
   const lineStart = value.lastIndexOf("\n", start - 1) + 1;
-  const block = value.slice(lineStart, end);
+  const lastChar = end > start && value[end - 1] === "\n" ? end - 1 : end;
+  const nextBreak = value.indexOf("\n", lastChar);
+  const lineEnd = nextBreak < 0 ? value.length : nextBreak;
+  const block = value.slice(lineStart, lineEnd);
   const lines = block.split("\n");
   const changed = lines.map((line) =>
     event.shiftKey ? line.replace(/^( {1,2}|\t)/, "") : indent + line,
@@ -531,11 +546,12 @@ function editorKeydown(event: KeyboardEvent) {
   const firstDelta = changed[0].length - lines[0].length;
   const replacement = changed.join("\n");
   if (replacement === block) return;
-  editor.setSelectionRange(lineStart, end);
+  editor.setSelectionRange(lineStart, lineEnd);
   document.execCommand("insertText", false, replacement);
+  const newStart = Math.max(lineStart, start + firstDelta);
   editor.setSelectionRange(
-    Math.max(lineStart, start + firstDelta),
-    lineStart + replacement.length,
+    newStart,
+    Math.max(newStart, end + replacement.length - block.length),
   );
 }
 function keyboard(event: KeyboardEvent) {
@@ -975,18 +991,19 @@ onUnmounted(() => {
     <dialog
       ref="zoomDialog"
       class="diagram-dialog"
+      aria-labelledby="diagram-dialog-title"
       @click="$event.target === zoomDialog && zoomDialog?.close()"
     >
       <div class="dialog-toolbar">
         <div class="dialog-title">
-          <strong>{{ t("diagramPreview") }}</strong>
+          <strong id="diagram-dialog-title">{{ t("diagramPreview") }}</strong>
           <small>{{ t("diagramHint", { key: modifierKey }) }}</small>
         </div>
         <div class="dialog-actions">
           <button
             :aria-label="t('smallerDiagram')"
             :title="t('smallerDiagram')"
-            :disabled="diagramZoom <= 0.5"
+            :disabled="diagramZoom <= 0.25"
             @click="zoomDiagram(1 / 1.25)"
           >
             <Icon name="minus" /></button
