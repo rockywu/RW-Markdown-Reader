@@ -24,7 +24,7 @@
 macOS：打开 DMG，将 Markview 拖入 Applications。
 Windows：运行 EXE 安装向导。
 
-当前安装包尚未购买开发者证书，没有 Apple 公证或 Windows 发行者签名。macOS Gatekeeper / Windows SmartScreen 可能显示安全提示；请确认下载来源是此仓库的 Release。无需关闭系统安全功能。
+当前安装包没有配置开发者证书签名、Apple 公证或 Windows 发行者签名。macOS Gatekeeper / Windows SmartScreen 可能显示安全提示；请确认下载来源是此仓库的 Release。无需关闭系统安全功能。
 
 These builds are not Developer ID signed, Apple notarized, or Windows publisher signed. Your operating system may display a security prompt. Only download from this repository's Releases.
 
