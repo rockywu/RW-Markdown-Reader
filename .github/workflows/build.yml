@@ -1,18 +1,37 @@
-name: Build desktop apps
+name: Build and release desktop apps
+
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
+    name: Build ${{ matrix.platform }}
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            command: dist:mac
-          - os: windows-latest
-            command: dist:win
+          - platform: mac-intel
+            os: macos-15-intel
+            arguments: --mac dmg --x64
+            asset: release/*-mac-x64.dmg
+          - platform: mac-apple-silicon
+            os: macos-15
+            arguments: --mac dmg --arm64
+            asset: release/*-mac-arm64.dmg
+          - platform: windows-x64
+            os: windows-2025
+            arguments: --win nsis --x64
+            asset: release/*-windows-x64-setup.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -20,15 +39,96 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Check release version
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const { version } = require('./package.json');
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Expected a stable x.y.z version');
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version}`) {
+            throw new Error('Git tag must match package.json version');
+          }
+          NODE
       - run: npm ci
-      - run: npm test
-      - run: npm run test:e2e
-      - run: npm run ${{ matrix.command }} -- --publish never
+      - name: Stage verification and build
+        run: npm test && npm run build
+      - name: Package installer
+        run: npx --no-install electron-builder ${{ matrix.arguments }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - uses: actions/upload-artifact@v4
+      - name: Verify packaged application
+        run: npm run test:packaged
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
         with:
-          name: Markview-${{ matrix.os }}
-          path: |
-            release/*.dmg
-            release/*setup.exe
+          name: installer-${{ matrix.platform }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ matrix.platform }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: downloads
+          merge-multiple: true
+      - name: Verify installers and create checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node - <<'NODE'
+          const { readdirSync, readFileSync, writeFileSync } = require('node:fs');
+          const { createHash } = require('node:crypto');
+          const { version } = require('./package.json');
+          if (process.env.RELEASE_TAG !== `v${version}`) throw new Error('Version mismatch');
+          const expected = [
+            `Markview-${version}-mac-x64.dmg`,
+            `Markview-${version}-mac-arm64.dmg`,
+            `Markview-${version}-windows-x64-setup.exe`,
+          ].sort();
+          const actual = readdirSync('downloads').sort();
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Expected exactly three installers');
+          const checksums = expected.map(name => {
+            const bytes = readFileSync(`downloads/${name}`);
+            if (bytes.length < 10 * 1024 * 1024) throw new Error(`Installer is unexpectedly small: ${name}`);
+            return `${createHash('sha256').update(bytes).digest('hex')}  ${name}`;
+          });
+          writeFileSync('downloads/SHA256SUMS.txt', checksums.join('\n') + '\n');
+          NODE
+          (cd downloads && sha256sum --check SHA256SUMS.txt)
+      - name: Publish all downloads together
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' > release-draft.txt; then
+            if [ "$(cat release-draft.txt)" != "true" ]; then
+              echo "This release is already published. Publish a new version instead."
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft \
+              --title "Markview $RELEASE_TAG" --notes-file .github/RELEASE_NOTES.md
+          fi
+          gh release upload "$RELEASE_TAG" downloads/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

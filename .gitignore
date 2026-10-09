@@ -5,3 +5,13 @@ release/
 test-results/
 *.tsbuildinfo
 .DS_Store
+
+# Local editor state, worktrees, credentials and signing material
+.claude/
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key

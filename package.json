@@ -108,5 +108,13 @@
         "to": "icon.png"
       }
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rockywu/RW-Markdown-Reading.git"
+  },
+  "homepage": "https://github.com/rockywu/RW-Markdown-Reading",
+  "bugs": {
+    "url": "https://github.com/rockywu/RW-Markdown-Reading/issues"
   }
 }

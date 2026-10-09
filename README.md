@@ -2,12 +2,29 @@
 
 基于 Electron + Vue 3 的本地 Markdown 编辑与预览软件，面向 macOS 和 Windows。渲染资源随应用打包，无账号、无后端、无遥测。
 
+## 下载安装
+
+进入 [最新版本下载页](https://github.com/rockywu/RW-Markdown-Reading/releases/latest)，展开 **Assets**：
+
+| 你的电脑 | 应下载的文件 |
+| --- | --- |
+| Windows 10 / 11 x64 | `Markview-版本号-windows-x64-setup.exe` |
+| Mac Intel，macOS 13+ | `Markview-版本号-mac-x64.dmg` |
+| Mac Apple Silicon，macOS 13+ | `Markview-版本号-mac-arm64.dmg` |
+
+Windows 运行安装向导；macOS 打开 DMG 后把 Markview 拖入 Applications。安装版不需要 Node.js。`Source code (zip)` / `Source code (tar.gz)` 是源码，不是安装包。
+
+[English: download the latest release](https://github.com/rockywu/RW-Markdown-Reading/releases/latest). Choose the Windows x64 EXE, Mac Intel DMG, or Mac Apple Silicon DMG under Assets.
+
+安装包目前未签名、未进行 Apple 公证，系统可能显示安全提示。请核对本仓库的发布地址。每次发布附带 `SHA256SUMS.txt`，可用于核验下载文件。
+
 ## 开始使用
 
 开发环境需要 Node.js 22.12+ 或 24.x，以及 npm。安装后的桌面软件不需要 Node.js。
 
 ```bash
-cd /Users/wujialei/workspaces/markdown-reader
+git clone https://github.com/rockywu/RW-Markdown-Reading.git
+cd RW-Markdown-Reading
 npm ci
 npm run dev
 ```
@@ -112,7 +129,20 @@ npm run dist:win   # Windows x64 NSIS 安装包
 
 产物在 `release/`。发布前应分别在目标系统验收：macOS 13+ 的 Intel / Apple Silicon，Windows 10 / 11 x64。配置目标不代表已经覆盖所有平台实测。
 
-`.github/workflows/build.yml` 提供 macOS、Windows 两个独立构建任务。推送 `v*` 标签或手动触发会运行测试和构建，然后上传安装包作为 CI artifact，不自动发布 Release。需要先将本独立项目托管到 GitHub 才能运行。
+### GitHub 自动发布
+
+[构建状态](https://github.com/rockywu/RW-Markdown-Reading/actions/workflows/build.yml) · [所有发布](https://github.com/rockywu/RW-Markdown-Reading/releases)
+
+`.github/workflows/build.yml` 在 macOS Intel、macOS Apple Silicon、Windows x64 三个独立环境构建，各自运行阶段测试、构建及打包后应用验收。全部成功后，自动创建 GitHub Release，上传三个安装包和 SHA-256 校验文件；完整上传后才公开。发布使用仓库自动提供的 `GITHUB_TOKEN`，无需另建 PAT。
+
+后续发布步骤：
+
+1. 完成该阶段的开发，更新 `.github/RELEASE_NOTES.md`。
+2. 执行 `npm version patch`（修复）或 `npm version minor`（功能）更新版本并生成标签。先提交其他改动，保持工作区干净。
+3. 执行 `git push origin main --follow-tags`。
+4. 等待 Actions 成功，在 Releases 页面下载。版本标签必须与 `package.json` 一致，例如 `v0.3.0`。
+
+在 Actions 点击 **Run workflow**、选择 `main`，只构建并保留 14 天的测试安装包；选择已有版本标签则会尝试发布该版本。失败时可在 Actions 重跑失败任务；已公开的版本不会被覆盖，应发布新版本。不要修改已发布的标签。
 
 当前是本地试用构建，没有开发者证书签名或 Apple 公证。分发给其他用户前需要配置平台签名、公证并进行安装验收；未签名文件可能显示系统安全提示。
 
