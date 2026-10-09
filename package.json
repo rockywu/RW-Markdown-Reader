@@ -1,0 +1,112 @@
+{
+  "name": "markview",
+  "version": "0.2.1",
+  "private": true,
+  "description": "离线 Markdown 编辑、实时预览、Mermaid 与数学公式",
+  "author": "Markview contributors",
+  "main": "dist-electron/main.js",
+  "engines": {
+    "node": ">=22.12.0 <25"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "start": "electron .",
+    "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "build": "npm run typecheck && tsc -p tsconfig.electron.json && vite build",
+    "test": "vitest run",
+    "test:e2e": "npm run build && node tests/electron.mjs",
+    "test:packaged": "node tests/electron.mjs --packaged",
+    "check": "npm run test && npm run test:e2e",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:mac": "npm run build && electron-builder --mac dmg --x64 --arm64",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "icons": "electron scripts/generate-icons.cjs"
+  },
+  "devDependencies": {
+    "dompurify": "3.4.16",
+    "highlight.js": "11.12.0",
+    "js-yaml": "5.4.3",
+    "markdown-it": "15.0.2",
+    "markdown-it-container": "4.0.0",
+    "markdown-it-footnote": "4.0.0",
+    "markdown-it-github-alerts": "1.0.1",
+    "markdown-it-task-lists": "2.1.1",
+    "mathjax-full": "3.2.2",
+    "mermaid": "12.1.0",
+    "vue": "3.5.43",
+    "@types/js-yaml": "4.0.9",
+    "@types/markdown-it": "14.2.0",
+    "@types/markdown-it-container": "4.0.1",
+    "@types/markdown-it-footnote": "3.0.4",
+    "@types/node": "24.10.0",
+    "@vitejs/plugin-vue": "6.0.9",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "jsdom": "26.1.0",
+    "playwright": "1.64.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3",
+    "vue-tsc": "3.3.12"
+  },
+  "build": {
+    "appId": "dev.markview.reader",
+    "productName": "Markview",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown"
+        ],
+        "name": "Markdown document",
+        "role": "Editor",
+        "icon": "icon"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "minimumSystemVersion": "13.0.0",
+      "icon": "build/icon.icns"
+    },
+    "dmg": {
+      "artifactName": "Markview-${version}-mac-${arch}.${ext}",
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Markview-${version}-windows-${arch}-setup.${ext}",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Markview"
+    },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ]
+  }
+}
