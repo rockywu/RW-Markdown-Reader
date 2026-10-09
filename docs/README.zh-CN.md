@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-进入 [最新版本下载页](https://github.com/rockywu/RW-Markdown-Reading/releases/latest)，展开 **Assets**：
+进入 [最新版本下载页](https://github.com/rockywu/RW-Markdown-Reader/releases/latest)，展开 **Assets**：
 
 | 你的电脑 | 应下载的文件 |
 | --- | --- |
@@ -23,8 +23,8 @@ Windows 运行安装向导；macOS 打开 DMG 后把 Markview 拖入 Application
 开发环境需要 Node.js 22.12+ 或 24.x，以及 npm。安装后的桌面软件不需要 Node.js。
 
 ```bash
-git clone https://github.com/rockywu/RW-Markdown-Reading.git
-cd RW-Markdown-Reading
+git clone https://github.com/rockywu/RW-Markdown-Reader.git
+cd RW-Markdown-Reader
 npm ci
 npm run dev
 ```
@@ -143,7 +143,7 @@ npm run dist:win   # Windows x64 NSIS 安装包
 
 ### GitHub 自动发布
 
-[构建状态](https://github.com/rockywu/RW-Markdown-Reading/actions/workflows/build.yml) · [所有发布](https://github.com/rockywu/RW-Markdown-Reading/releases)
+[构建状态](https://github.com/rockywu/RW-Markdown-Reader/actions/workflows/build.yml) · [所有发布](https://github.com/rockywu/RW-Markdown-Reader/releases)
 
 `.github/workflows/build.yml` 在 macOS Intel、macOS Apple Silicon、Windows x64 三个独立环境构建，各自运行阶段测试、构建及打包后应用验收。全部成功后，自动创建 GitHub Release，上传三个安装包和 SHA-256 校验文件；完整上传后才公开。发布使用仓库自动提供的 `GITHUB_TOKEN`，无需另建 PAT。
 
@@ -160,10 +160,10 @@ npm run dist:win   # Windows x64 NSIS 安装包
 
 ### 本次验证（2026-10-09）
 
-- [v0.4.1 发布](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.4.1)：包含 Mermaid 高清 PNG 下载与真实全屏预览。Windows x64、Mac Intel、Mac Apple Silicon 均通过 GitHub 原生环境的单元测试、构建及打包后应用验收，安装包和 `SHA256SUMS.txt` 已公开。发布验证期间修正了 Windows 导出窗口尺寸限制，保留完整图像尺寸检查；v0.4.0 未公开安装包。下列“未发布／未验收”是各功能开发阶段的历史记录。
+- [v0.4.1 发布](https://github.com/rockywu/RW-Markdown-Reader/releases/tag/v0.4.1)：包含 Mermaid 高清 PNG 下载与真实全屏预览。Windows x64、Mac Intel、Mac Apple Silicon 均通过 GitHub 原生环境的单元测试、构建及打包后应用验收，安装包和 `SHA256SUMS.txt` 已公开。发布验证期间修正了 Windows 导出窗口尺寸限制，保留完整图像尺寸检查；v0.4.0 未公开安装包。下列“未发布／未验收”是各功能开发阶段的历史记录。
 - 图表全屏修复：四角按钮改为真实全屏切换，适应窗口使用独立文字按钮。构建和 macOS Electron 阶段验收通过，检查了系统窗口全屏状态、预览铺满屏幕、按钮／Esc 退出、全屏中关闭图表及重新打开；原有下载和编辑验收也通过。本次没有重新发布安装包或在 Windows 验收。
 - Mermaid 高清下载：41 项单元测试、类型检查与构建通过；macOS Electron 阶段验收覆盖页面／放大窗口导出一致、深色与自定义颜色、取消／保存失败和草稿保留。已检查中文流程图（2853 × 2994）和时序图（2400 × 1690）的实际 PNG。此改动尚未发布新安装包，Windows／Apple Silicon 本次未重验。
-- [v0.3.1 首次公开发布](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.3.1)：Windows x64、Mac Intel、Mac Apple Silicon 在 GitHub 托管环境中全部通过阶段测试、构建和打包后应用验收，三个安装包及 `SHA256SUMS.txt` 已公开。修正了验收脚本对 Windows 剪贴板换行和构建机窄屏菜单的假设；没有跳过功能断言。下文的“尚未实机验收”是此前本地版本的记录，不代表本次 CI 未执行。安装向导、其他系统版本仍需人工验收。
+- [v0.3.1 首次公开发布](https://github.com/rockywu/RW-Markdown-Reader/releases/tag/v0.3.1)：Windows x64、Mac Intel、Mac Apple Silicon 在 GitHub 托管环境中全部通过阶段测试、构建和打包后应用验收，三个安装包及 `SHA256SUMS.txt` 已公开。修正了验收脚本对 Windows 剪贴板换行和构建机窄屏菜单的假设；没有跳过功能断言。下文的“尚未实机验收”是此前本地版本的记录，不代表本次 CI 未执行。安装向导、其他系统版本仍需人工验收。
 - 0.3.0 增加中文／English 界面、系统首选语言识别、手动语言记忆、可拖动分隔线和隐藏预览；27 项自动化测试、类型检查与构建通过，开发构建通过真实 Electron 断网验收，包括语言切换后的菜单与保存提示、草稿保留、分隔线鼠标／键盘操作，以及重启后的语言、宽度和预览可见性记忆。macOS Intel／Apple Silicon 和 Windows x64 安装包已生成，本阶段没有重复运行打包版全套验收。
 - 0.2.1 增加参考图的默认蓝色流程图样式、深色适配和配色示例；14 项自动化测试、类型检查与构建通过，开发构建及 Mac Intel 打包版通过真实 Electron 断网验收，覆盖默认颜色、圆角、标签尺寸与布局、自定义颜色优先级、图表间配置隔离及放大预览。macOS Intel／Apple Silicon 和 Windows x64 安装包已生成。
 - 0.2.0 增加全局图标、源码编辑、实时预览和保存保护；14 项自动化测试通过（含 BOM／CRLF 保存、外部修改和删除冲突），类型检查与构建通过。

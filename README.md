@@ -6,7 +6,7 @@ An offline Markdown editor and reader for macOS and Windows, with live preview, 
 
 ## Download
 
-Download an installer from the [latest release](https://github.com/rockywu/RW-Markdown-Reading/releases/latest):
+Download an installer from the [latest release](https://github.com/rockywu/RW-Markdown-Reader/releases/latest):
 
 | Platform | Installer |
 | --- | --- |

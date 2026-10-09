@@ -6,7 +6,7 @@ Markview is a local Markdown editor and reader for macOS and Windows, built with
 
 ## Download and install
 
-Open the [latest release](https://github.com/rockywu/RW-Markdown-Reading/releases/latest) and expand **Assets**:
+Open the [latest release](https://github.com/rockywu/RW-Markdown-Reader/releases/latest) and expand **Assets**:
 
 | Your computer | File to download |
 | --- | --- |
@@ -94,8 +94,8 @@ The separate **Fit to window** button adjusts only the diagram's zoom so the com
 Development requires Node.js 22.12+ within the 22.x line, or Node.js 24.x, and npm. Installed applications do not require Node.js.
 
 ```bash
-git clone https://github.com/rockywu/RW-Markdown-Reading.git
-cd RW-Markdown-Reading
+git clone https://github.com/rockywu/RW-Markdown-Reader.git
+cd RW-Markdown-Reader
 npm ci
 npm run dev
 ```
@@ -149,7 +149,7 @@ Outputs are written to `release/`. Before publishing, verify the target systems:
 
 ### GitHub releases
 
-[Build status](https://github.com/rockywu/RW-Markdown-Reading/actions/workflows/build.yml) · [All releases](https://github.com/rockywu/RW-Markdown-Reading/releases)
+[Build status](https://github.com/rockywu/RW-Markdown-Reader/actions/workflows/build.yml) · [All releases](https://github.com/rockywu/RW-Markdown-Reader/releases)
 
 The workflow in `.github/workflows/build.yml` builds on separate macOS Intel, macOS Apple Silicon, and Windows x64 runners. Each runs stage checks, builds an installer, and verifies the packaged application. After all three succeed, the workflow creates a GitHub Release with the installers and a SHA-256 checksum file, making it public only after all uploads complete. It uses the repository-provided `GITHUB_TOKEN`; a separate personal access token is not required.
 
@@ -166,10 +166,10 @@ Published installers currently lack developer certificate signing and Apple nota
 
 ### Verification history — October 9, 2026
 
-- [v0.4.1](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.4.1) includes high-resolution Mermaid PNG export and actual fullscreen preview. Windows x64, Mac Intel, and Mac Apple Silicon all passed unit tests, builds, and packaged application checks on native GitHub runners. Installers and `SHA256SUMS.txt` are public. Windows export window size constraints were fixed during release verification while retaining complete-image dimension checks. No v0.4.0 installers were published.
+- [v0.4.1](https://github.com/rockywu/RW-Markdown-Reader/releases/tag/v0.4.1) includes high-resolution Mermaid PNG export and actual fullscreen preview. Windows x64, Mac Intel, and Mac Apple Silicon all passed unit tests, builds, and packaged application checks on native GitHub runners. Installers and `SHA256SUMS.txt` are public. Windows export window size constraints were fixed during release verification while retaining complete-image dimension checks. No v0.4.0 installers were published.
 - Before that release, fullscreen was checked locally for native window state, a preview filling the screen, button and Escape exit, closing while fullscreen, and reopening. Export and editing checks also passed.
 - The export stage passed 41 unit tests, type checks, builds, and local macOS Electron checks for identical inline and modal exports, dark and custom colors, canceled or failed saves, and preserved drafts. Actual PNGs were inspected for a Chinese flowchart at 2853 × 2994 and a sequence diagram at 2400 × 1690.
-- [v0.3.1](https://github.com/rockywu/RW-Markdown-Reading/releases/tag/v0.3.1) was the first public release. All three platforms passed checks on GitHub runners. The test script was corrected for Windows clipboard line endings and narrow hosted desktops without removing functional assertions.
+- [v0.3.1](https://github.com/rockywu/RW-Markdown-Reader/releases/tag/v0.3.1) was the first public release. All three platforms passed checks on GitHub runners. The test script was corrected for Windows clipboard line endings and narrow hosted desktops without removing functional assertions.
 - v0.3.0 added Chinese / English interfaces, system language detection, saved language choices, a draggable divider, and preview visibility. It passed 27 unit tests, type checks, builds, and offline Electron checks, including persistence after restart. Installers were generated for all three targets; a full packaged test run was not repeated at that stage.
 - v0.2.1 added the default blue flowchart style, dark-mode colors, and color examples. Fourteen unit tests, type checks, builds, and offline Electron checks passed for the development build and packaged Mac Intel application, including author styles and configuration isolation.
 - v0.2.0 added application icons, source editing, live preview, and save protection. Fourteen unit tests passed, including BOM / CRLF preservation and external modification or deletion conflicts. Type checks, builds, and offline packaged Mac checks passed. Windows executable, installer, uninstaller, and association icons were inspected, along with macOS application and association icons.
